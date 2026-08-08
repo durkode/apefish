@@ -1,0 +1,11 @@
+[package]
+name = "apefish-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "apefish"
+path = "src/main.rs"
+
+[dependencies]
+apefish-engine = { path = "../engine" }
