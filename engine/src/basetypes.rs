@@ -1,6 +1,6 @@
 //! Core value types shared across the engine (side, piece type, moves).
 
-use strum::EnumCount;
+use strum::{EnumCount, IntoEnumIterator};
 // use std::default; // unused for now
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
@@ -28,6 +28,26 @@ pub struct Piece {
     pub kind: PieceType,
 }
 
+impl Piece {
+    pub const fn to_unicode_char(self) -> char {
+        match (self.side, self.kind) {
+            (Side::White, PieceType::Pawn) => '♙',
+            (Side::White, PieceType::Knight) => '♘',
+            (Side::White, PieceType::Bishop) => '♗',
+            (Side::White, PieceType::Rook) => '♖',
+            (Side::White, PieceType::Queen) => '♕',
+            (Side::White, PieceType::King) => '♔',
+            (Side::Black, PieceType::Pawn) => '♟',
+            (Side::Black, PieceType::Knight) => '♞',
+            (Side::Black, PieceType::Bishop) => '♝',
+            (Side::Black, PieceType::Rook) => '♜',
+            (Side::Black, PieceType::Queen) => '♛',
+            (Side::Black, PieceType::King) => '♚',
+            (_, PieceType::None) => '□',
+        }
+    }
+}
+
 /// A single square on the board (a1 = 0 ... h8 = 63). Encoding TBD.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
 #[repr(u8)]
@@ -42,9 +62,14 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8,
 }
 
+impl Square {
+    
+    pub const fn bitboard_mask(self) -> Bitboard {
+        Bitboard(1u64 << self as u8)
+    }
+}
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum File {
     A = 0, 
@@ -57,7 +82,7 @@ pub enum File {
     H
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Rank {
     R1 = 0,
@@ -91,6 +116,27 @@ impl Bitboard {
 
     pub const fn new(bits: u64) -> Self {
         Bitboard(bits)
+    }
+
+    // If this bitboard is a mask, return the corresponding square
+    pub fn single_square(self) -> Option<Square> {
+        // Unsafe cast code relies on the fact that Square has complete mapping in range 0..=63
+        match self.0.count_ones() {
+            1 => Some(unsafe { std::mem::transmute::<u8, Square>(self.0.trailing_zeros() as u8) }),
+            _ => None
+        }
+    }
+
+    pub fn print(self, char: char) {
+        const LAST_BIT: u8 = 63;
+        for rank in Rank::iter() {
+            for file in File::iter().rev() {
+                let to_shift = (LAST_BIT - ((rank as u8) * 8) - (file as u8));
+                let mask = 1u64 << (to_shift as u64);
+                let char = if self & Bitboard::new(mask) != Bitboard::EMPTY { char } else { '0' };
+                print!("{char} ");
+            }
+        }
     }
 }
 
