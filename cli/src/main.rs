@@ -4,8 +4,11 @@
 
 // use apefish_engine::{Apefish, Move};
 
+use apefish_engine::Apefish;
+
 fn main() {
-    unimplemented!()
+    let af = Apefish::new();
+    af.print_debug_state();
 }
 
 // /// Render the current position to the terminal.

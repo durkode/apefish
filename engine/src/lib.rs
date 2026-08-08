@@ -33,14 +33,25 @@ pub trait Engine {
     // /// Search from the current position under the given limits and return the result.
     // fn go(&mut self, limits: SearchLimits) -> SearchResult;
 
-    /// Ask an in-progress `go` to return its best move so far as soon as possible.
-    fn stop(&mut self);
+    // /// Ask an in-progress `go` to return its best move so far as soon as possible.
+    // fn stop(&mut self);
 }
 
 /// The concrete apefish engine implementing [`Engine`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Apefish {
-    // Internal state (position, search state, ...) TBD.
+    position: Position
+}
+
+// Make pub now for debugging purposes
+impl Apefish {
+    pub fn new() -> Self {
+        Apefish { position: Position::new() }
+    }
+
+    pub fn print_debug_state(&self) {
+        self.position.print_state();
+    }
 }
 
 impl Engine for Apefish {
@@ -64,7 +75,7 @@ impl Engine for Apefish {
     //     unimplemented!()
     // }
 
-    fn stop(&mut self) {
-        unimplemented!()
-    }
+    // fn stop(&mut self) {
+    //     unimplemented!()
+    // }
 }

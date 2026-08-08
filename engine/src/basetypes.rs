@@ -3,14 +3,14 @@
 use strum::{EnumCount, IntoEnumIterator};
 // use std::default; // unused for now
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
+#[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Side {
     White,
     Black,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
+#[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum PieceType {
     Pawn,
@@ -19,18 +19,18 @@ pub enum PieceType {
     Rook,
     Queen,
     King,
-    None,
+    // None, (Unsure if we want this, leaving out for now)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece {
     pub side: Side,
-    pub kind: PieceType,
+    pub piece_type: PieceType,
 }
 
 impl Piece {
     pub const fn to_unicode_char(self) -> char {
-        match (self.side, self.kind) {
+        match (self.side, self.piece_type) {
             (Side::White, PieceType::Pawn) => '♙',
             (Side::White, PieceType::Knight) => '♘',
             (Side::White, PieceType::Bishop) => '♗',
@@ -43,13 +43,13 @@ impl Piece {
             (Side::Black, PieceType::Rook) => '♜',
             (Side::Black, PieceType::Queen) => '♛',
             (Side::Black, PieceType::King) => '♚',
-            (_, PieceType::None) => '□',
+            // (_, PieceType::None) => '□',
         }
     }
 }
 
 /// A single square on the board (a1 = 0 ... h8 = 63). Encoding TBD.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Square {
     A1 = 0, B1, C1, D1, E1, F1, G1, H1,
@@ -114,7 +114,7 @@ impl Bitboard {
     pub const EMPTY: Bitboard = Bitboard(0);
     pub const FULL: Bitboard = Bitboard(u64::MAX);
 
-    pub const fn new(bits: u64) -> Self {
+    pub const fn from(bits: u64) -> Self {
         Bitboard(bits)
     }
 
@@ -128,14 +128,14 @@ impl Bitboard {
     }
 
     pub fn print(self, char: char) {
-        const LAST_BIT: u8 = 63;
         for rank in Rank::iter() {
             for file in File::iter().rev() {
-                let to_shift = (LAST_BIT - ((rank as u8) * 8) - (file as u8));
+                let to_shift = 63u8 - ((rank as u8) * 8) - (file as u8);
                 let mask = 1u64 << (to_shift as u64);
-                let char = if self & Bitboard::new(mask) != Bitboard::EMPTY { char } else { '0' };
+                let char = if self & Bitboard::from(mask) != Bitboard::EMPTY { char } else { '0' };
                 print!("{char} ");
             }
+            print!("\n");
         }
     }
 }
@@ -215,7 +215,7 @@ impl std::ops::ShrAssign<u32> for Bitboard {
 // Side and piece containers
 
 // PerPiece
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PerPiece<T>([T; PieceType::COUNT]);
 
 impl<T> PerPiece<T>
@@ -224,6 +224,10 @@ where
 {
     pub fn new(default_value: T) -> Self {
         Self([default_value; PieceType::COUNT])
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (PieceType, &T)> {
+        PieceType::iter().zip(self.0.iter())
     }
 }
 
@@ -241,7 +245,7 @@ impl<T> std::ops::IndexMut<PieceType> for PerPiece<T> {
 }
 
 // PerSide
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PerSide<T>([T; Side::COUNT]);
 
 impl<T> PerSide<T>
@@ -250,6 +254,10 @@ where
 {
     pub fn new(default_value: T) -> Self {
         Self([default_value; Side::COUNT])
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Side, &T)> {
+        Side::iter().zip(self.0.iter())
     }
 }
 
@@ -267,7 +275,7 @@ impl<T> std::ops::IndexMut<Side> for PerSide<T> {
 }
 
 // PerSquare
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PerSquare<T>([T; Square::COUNT]);
 
 impl<T> PerSquare<T>
@@ -276,6 +284,10 @@ where
 {
     pub fn new(default_value: T) -> Self {
         Self([default_value; Square::COUNT])
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Square, &T)> {
+        Square::iter().zip(self.0.iter())
     }
 }
 

@@ -3,7 +3,7 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::basetypes::{Bitboard, PerPiece, PerSide};
+use crate::{Piece, basetypes::{Bitboard, PerPiece, PerSide}};
 // use crate::basetypes::{Move, Piece, Side, Square}; // unused while Position methods below are commented out
 
 /// Error parsing a FEN string. Detail fields TBD.
@@ -14,16 +14,28 @@ pub struct FenError;
 #[derive(Debug, Clone)]
 pub struct Position {
     pub pieces: PerSide<PerPiece<Bitboard>>,
-    pub sides_pieces: PerSide<Bitboard>,
+    // pub sides_pieces: PerSide<Bitboard>,
 }
 
 impl Position {
-    // Unused for now, commented out to silence warnings. Uncomment as these get wired up.
 
-    // /// The standard starting position.
-    // pub fn startpos() -> Self {
-    //     unimplemented!()
-    // }
+    /// The standard starting position.
+    pub fn new() -> Self {
+        let pieces = PerSide::new(PerPiece::new(Bitboard::EMPTY));
+        Position {
+            pieces: pieces
+        }
+    }
+
+    pub fn print_state(&self) {
+        for (side, per_piece) in self.pieces.iter() {
+            println!("\n============= {side} ==========");
+            for (piece_type, bb) in per_piece.iter() {
+                println!("\n{piece_type}");
+                bb.print(Piece{side, piece_type}.to_unicode_char());
+            }
+        }
+    }
 
     // /// Parse a position from Forsyth-Edwards Notation.
     // pub fn from_fen(fen: &str) -> Result<Self, FenError> {
