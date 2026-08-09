@@ -10,7 +10,7 @@ pub mod eval;
 pub mod movegen;
 pub mod search;
 
-pub use basetypes::{Move, Piece, PieceType, Side, Square};
+pub use basetypes::{Move, Piece, PieceKind, Side, Square};
 pub use board::{FenError, Position};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};

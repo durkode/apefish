@@ -6,44 +6,45 @@ use strum::{EnumCount, IntoEnumIterator};
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Side {
-    White,
+    White = 0,
     Black,
+    None,
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
-pub enum PieceType {
+pub enum PieceKind {
     Pawn,
     Knight,
     Bishop,
     Rook,
     Queen,
     King,
-    // None, (Unsure if we want this, leaving out for now)
+    None, //(Unsure if we want this)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece {
     pub side: Side,
-    pub piece_type: PieceType,
+    pub piece_kind: PieceKind,
 }
 
 impl Piece {
     pub const fn to_unicode_char(self) -> char {
-        match (self.side, self.piece_type) {
-            (Side::White, PieceType::Pawn) => '♙',
-            (Side::White, PieceType::Knight) => '♘',
-            (Side::White, PieceType::Bishop) => '♗',
-            (Side::White, PieceType::Rook) => '♖',
-            (Side::White, PieceType::Queen) => '♕',
-            (Side::White, PieceType::King) => '♔',
-            (Side::Black, PieceType::Pawn) => '♟',
-            (Side::Black, PieceType::Knight) => '♞',
-            (Side::Black, PieceType::Bishop) => '♝',
-            (Side::Black, PieceType::Rook) => '♜',
-            (Side::Black, PieceType::Queen) => '♛',
-            (Side::Black, PieceType::King) => '♚',
-            // (_, PieceType::None) => '□',
+        match (self.side, self.piece_kind) {
+            (Side::White, PieceKind::Pawn) => '♙',
+            (Side::White, PieceKind::Knight) => '♘',
+            (Side::White, PieceKind::Bishop) => '♗',
+            (Side::White, PieceKind::Rook) => '♖',
+            (Side::White, PieceKind::Queen) => '♕',
+            (Side::White, PieceKind::King) => '♔',
+            (Side::Black, PieceKind::Pawn) => '♟',
+            (Side::Black, PieceKind::Knight) => '♞',
+            (Side::Black, PieceKind::Bishop) => '♝',
+            (Side::Black, PieceKind::Rook) => '♜',
+            (Side::Black, PieceKind::Queen) => '♛',
+            (Side::Black, PieceKind::King) => '♚',
+            (_, _) => '□',
         }
     }
 }
@@ -100,7 +101,7 @@ pub enum Rank {
 pub struct Move {
     pub from: Square,
     pub to: Square,
-    pub promotion: Option<PieceType>,
+    pub promotion: Option<PieceKind>,
 }
 
 
@@ -216,30 +217,30 @@ impl std::ops::ShrAssign<u32> for Bitboard {
 
 // PerPiece
 #[derive(Debug, Clone, Copy)]
-pub struct PerPiece<T>([T; PieceType::COUNT]);
+pub struct PerPiece<T>([T; PieceKind::COUNT]);
 
 impl<T> PerPiece<T>
 where
     T: Copy
 {
     pub fn new(default_value: T) -> Self {
-        Self([default_value; PieceType::COUNT])
+        Self([default_value; PieceKind::COUNT])
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (PieceType, &T)> {
-        PieceType::iter().zip(self.0.iter())
+    pub fn iter(&self) -> impl Iterator<Item = (PieceKind, &T)> {
+        PieceKind::iter().zip(self.0.iter())
     }
 }
 
-impl<T> std::ops::Index<PieceType> for PerPiece<T> {
+impl<T> std::ops::Index<PieceKind> for PerPiece<T> {
     type Output = T;
-    fn index(&self, index: PieceType) -> &T {
+    fn index(&self, index: PieceKind) -> &T {
         &self.0[index as usize]
     }
 }
 
-impl<T> std::ops::IndexMut<PieceType> for PerPiece<T> {
-    fn index_mut(&mut self, index: PieceType) -> &mut T {
+impl<T> std::ops::IndexMut<PieceKind> for PerPiece<T> {
+    fn index_mut(&mut self, index: PieceKind) -> &mut T {
         &mut self.0[index as usize]
     }
 }
