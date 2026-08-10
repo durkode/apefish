@@ -5,13 +5,14 @@
 //! none of them talk to board/movegen/search directly.
 
 pub mod basetypes;
+pub mod fen;
 pub mod board;
 pub mod eval;
 pub mod movegen;
 pub mod search;
 
 pub use basetypes::{Move, Piece, PieceKind, Side, Square};
-pub use board::{FenError, Position};
+pub use board::{Position};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 

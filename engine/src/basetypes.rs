@@ -1,7 +1,13 @@
 //! Core value types shared across the engine (side, piece type, moves).
 
 use strum::{EnumCount, IntoEnumIterator};
-// use std::default; // unused for now
+
+use std::str::FromStr;
+
+#[derive(Debug)]
+pub enum GenericErr {
+    SquareParseError
+}
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
@@ -30,27 +36,29 @@ pub struct Piece {
 }
 
 impl Piece {
+
     pub const fn to_unicode_char(self) -> char {
         match (self.side, self.piece_kind) {
-            (Side::White, PieceKind::Pawn) => '♙',
-            (Side::White, PieceKind::Knight) => '♘',
-            (Side::White, PieceKind::Bishop) => '♗',
-            (Side::White, PieceKind::Rook) => '♖',
-            (Side::White, PieceKind::Queen) => '♕',
-            (Side::White, PieceKind::King) => '♔',
-            (Side::Black, PieceKind::Pawn) => '♟',
-            (Side::Black, PieceKind::Knight) => '♞',
-            (Side::Black, PieceKind::Bishop) => '♝',
-            (Side::Black, PieceKind::Rook) => '♜',
-            (Side::Black, PieceKind::Queen) => '♛',
-            (Side::Black, PieceKind::King) => '♚',
+            (Side::White, PieceKind::Pawn) => '♟',
+            (Side::White, PieceKind::Knight) => '♞',
+            (Side::White, PieceKind::Bishop) => '♝',
+            (Side::White, PieceKind::Rook) => '♜',
+            (Side::White, PieceKind::Queen) => '♛',
+            (Side::White, PieceKind::King) => '♚',
+            (Side::Black, PieceKind::Pawn) => '♙',
+            (Side::Black, PieceKind::Knight) => '♘',
+            (Side::Black, PieceKind::Bishop) => '♗',
+            (Side::Black, PieceKind::Rook) => '♖',
+            (Side::Black, PieceKind::Queen) => '♕',
+            (Side::Black, PieceKind::King) => '♔',
             (_, _) => '□',
         }
     }
 }
 
 /// A single square on the board (a1 = 0 ... h8 = 63). Encoding TBD.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter, strum::EnumString)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum Square {
     A1 = 0, B1, C1, D1, E1, F1, G1, H1,
@@ -67,6 +75,18 @@ impl Square {
     
     pub const fn bitboard_mask(self) -> Bitboard {
         Bitboard(1u64 << self as u8)
+    }
+
+    pub fn from_string(from: &str) -> Result<Self, GenericErr> {
+        match Square::from_str(from) {
+            Ok(x) => Ok(x),
+            Err(_) => Err(GenericErr::SquareParseError)
+        }
+    }
+
+    pub fn from_coords(file: File, rank: Rank) -> Self {
+        // Unsafe code relies on File, Rank, Square remaining relationally static.
+        unsafe { std::mem::transmute::<u8, Square>((file as u8) + (8 * rank as u8)) }
     }
 }
 
@@ -96,14 +116,39 @@ pub enum Rank {
     R8 
 }
 
-/// A single move: source/destination square plus optional promotion piece.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Move {
-    pub from: Square,
-    pub to: Square,
-    pub promotion: Option<PieceKind>,
+    // Implement later
 }
 
+pub struct CastlingRights {
+    rights: Bitboard
+}
+
+impl CastlingRights {
+    pub const NONE: Bitboard = Bitboard(0);
+    pub const WK: Bitboard = Bitboard(1);
+    pub const WQ: Bitboard = Bitboard(2);
+    pub const BK: Bitboard = Bitboard(4);
+    pub const BQ: Bitboard = Bitboard(8);
+    pub const ALL: Bitboard = Bitboard(15);
+
+    pub fn new(rights: Bitboard) -> Self {
+        CastlingRights { rights }
+    }
+
+    pub fn has_rights(self, direction: Bitboard) -> bool {
+        (self.rights & direction) != Bitboard::EMPTY
+    }
+
+    pub fn set_rights(&mut self, direction: Bitboard) {
+        self.rights |= direction;
+    }
+
+    pub fn remove_rights(&mut self, direction: Bitboard) {
+        self.rights &= !direction;
+    }
+}
 
 // Bitboards. This is a 'NewType' over a u64, and as such AI has been used to allow 
 // bitwise operations on bitboards as if they were a u64.
@@ -230,6 +275,10 @@ where
     pub fn iter(&self) -> impl Iterator<Item = (PieceKind, &T)> {
         PieceKind::iter().zip(self.0.iter())
     }
+
+    pub fn iter_mut(&mut self) -> std::iter::Zip<PieceKindIter, std::slice::IterMut<'_, T>> {
+        PieceKind::iter().zip(self.0.iter_mut())
+    }
 }
 
 impl<T> std::ops::Index<PieceKind> for PerPiece<T> {
@@ -260,6 +309,10 @@ where
     pub fn iter(&self) -> impl Iterator<Item = (Side, &T)> {
         Side::iter().zip(self.0.iter())
     }
+
+    pub fn iter_mut(&mut self) -> std::iter::Zip<SideIter, std::slice::IterMut<'_, T>> {
+        Side::iter().zip(self.0.iter_mut())
+    }
 }
 
 impl<T> std::ops::Index<Side> for PerSide<T> {
@@ -289,6 +342,10 @@ where
 
     pub fn iter(&self) -> impl Iterator<Item = (Square, &T)> {
         Square::iter().zip(self.0.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> std::iter::Zip<SquareIter, std::slice::IterMut<'_, T>> {
+        Square::iter().zip(self.0.iter_mut())
     }
 }
 
