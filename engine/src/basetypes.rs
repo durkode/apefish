@@ -118,7 +118,7 @@ pub struct Move {
     // Implement later
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct CastlingRights {
     rights: u8
 }

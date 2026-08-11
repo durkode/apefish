@@ -6,15 +6,63 @@
 use crate::{Move, Square, basetypes::{Bitboard, CastlingRights, PerPiece, PerSide, PerSquare, Piece, Side}, fen};
 // use crate::basetypes::{Move, Piece, Side, Square}; // unused while Position methods below are commented out
 
+const MAX_MOVES: usize = 1024;
+
 /// All of the metadata around gamestate (except actual pieces) at a given point in time
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct PositionState {
     pub active_colour: Side,
     pub castling: CastlingRights,
     pub half_move_clock: u8,
-    pub en_passant: Option<Square>,
     pub full_move_number: u16,
-    pub next_move: Move
+    pub en_passant: Option<Square>,
+    // pub next_move: Move
+}
+
+impl PositionState {
+    pub fn new() -> Self {
+        Self {
+            active_colour: Side::White,
+            castling: CastlingRights::new(CastlingRights::ALL),
+            half_move_clock: 0,
+            full_move_number: 0,
+            en_passant: None,
+            // next_move: Move {  },
+        }
+    }
+}
+
+pub struct PositionHistory {
+    stack_array: [PositionState; MAX_MOVES],
+    stack_pointer: usize
+}
+
+// Position history is effecitvely a stack of position states.
+// No error checking for out of bounds, assume the caller is tracking.
+impl PositionHistory {
+    pub fn new() -> Self {
+        Self {
+            stack_array: [PositionState::new(); MAX_MOVES],
+            stack_pointer: 0
+        }
+    }
+
+    // push to stack
+    pub fn push(&mut self, state: PositionState) {
+        self.stack_pointer += 1;
+        self.stack_array[self.stack_pointer] = state;
+    }
+
+    // pop from stack. Don't actually need to return or delete.
+    pub fn pop(&mut self) {
+        self.stack_pointer -= 1;
+    }
+
+    pub fn peek(&self) -> &PositionState {
+        &self.stack_array[self.stack_pointer]
+    }
+
+
 }
 
 /// A chess position.
