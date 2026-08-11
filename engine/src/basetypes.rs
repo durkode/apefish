@@ -14,7 +14,6 @@ pub enum GenericErr {
 pub enum Side {
     White = 0,
     Black,
-    None,
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -26,7 +25,6 @@ pub enum PieceKind {
     Rook,
     Queen,
     King,
-    None, //(Unsure if we want this)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +49,6 @@ impl Piece {
             (Side::Black, PieceKind::Rook) => '♖',
             (Side::Black, PieceKind::Queen) => '♕',
             (Side::Black, PieceKind::King) => '♔',
-            (_, _) => '□',
         }
     }
 }

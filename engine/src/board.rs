@@ -3,7 +3,7 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{Move, Square, basetypes::{Bitboard, CastlingRights, PerPiece, PerSide, PerSquare, Piece, PieceKind, Side}, fen};
+use crate::{Move, Square, basetypes::{Bitboard, CastlingRights, PerPiece, PerSide, PerSquare, Piece, Side}, fen};
 // use crate::basetypes::{Move, Piece, Side, Square}; // unused while Position methods below are commented out
 
 /// All of the metadata around gamestate (except actual pieces) at a given point in time
@@ -22,7 +22,7 @@ pub struct PositionState {
 pub struct Position {
     pub pieces: PerSide<PerPiece<Bitboard>>,
     pub sides_pieces: PerSide<Bitboard>,
-    pub piece_by_square: PerSquare<Piece>
+    pub piece_by_square: PerSquare<Option<Piece>>
 }
 
 impl Position {
@@ -31,7 +31,7 @@ impl Position {
     pub fn new() -> Self {
         let pieces = PerSide::new(PerPiece::new(Bitboard::EMPTY));
         let sides_pieces = PerSide::new(Bitboard::EMPTY);
-        let piece_list = PerSquare::new(Piece{side: Side::None, piece_kind: PieceKind::None});
+        let piece_list = PerSquare::new(None);
         let mut position = Position {
             pieces,
             sides_pieces,
@@ -65,9 +65,7 @@ impl Position {
         self.reset_piece_bitboards();
 
         for (square, piece) in self.piece_by_square.iter() {
-            if piece.side == Side::None {
-                continue;
-            }
+            let Some(piece) = piece else { continue };
             self.pieces[piece.side][piece.piece_kind] |= square.bitboard_mask();
             self.sides_pieces[piece.side] |= square.bitboard_mask();
         }

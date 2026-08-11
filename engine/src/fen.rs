@@ -21,7 +21,7 @@ pub enum FenError {
 pub const STARTING_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 pub struct FenParts {
-    pub pieces: PerSquare<Piece>,
+    pub pieces: PerSquare<Option<Piece>>,
     pub active_colour: Side,
     pub castling_rights: CastlingRights,
     pub en_passant_square: Option<Square>,
@@ -50,19 +50,19 @@ pub fn parse_fen(fen: &str) -> Result<FenParts, FenError>  {
 
 }
 
-fn fen_parse_pieces(piece_string: &str) -> Result<PerSquare<Piece>, FenError> {
+fn fen_parse_pieces(piece_string: &str) -> Result<PerSquare<Option<Piece>>, FenError> {
     let rank_strings: Vec<_> = piece_string.split('/').rev().collect();
     if rank_strings.len() != Rank::COUNT {
         return Err(FenError::IncorrectNumRanks);
     }
 
-    let mut pieces = PerSquare::new(Piece{piece_kind: crate::PieceKind::None, side: Side::None});
+    let mut pieces = PerSquare::new(None);
     let mut square_iter = pieces.iter_mut();
 
     for rstring in rank_strings.iter() {
         for c in rstring.chars() {
-            let piece = match c {
-                '0'..='9' => Some(Piece{piece_kind: PieceKind::None, side: Side::None}),
+            let square_piece = match c {
+                '0'..='9' => None,
                 'P' => Some(Piece{piece_kind: PieceKind::Pawn, side: Side::White}),
                 'N' => Some(Piece{piece_kind: PieceKind::Knight, side: Side::White}),
                 'B' => Some(Piece{piece_kind: PieceKind::Bishop, side: Side::White}),
@@ -75,16 +75,12 @@ fn fen_parse_pieces(piece_string: &str) -> Result<PerSquare<Piece>, FenError> {
                 'r' => Some(Piece{piece_kind: PieceKind::Rook, side: Side::Black}),
                 'q' => Some(Piece{piece_kind: PieceKind::Queen, side: Side::Black}),
                 'k' => Some(Piece{piece_kind: PieceKind::King, side: Side::Black}),
-                _ => None
+                _ => return Err(FenError::InvalidPiecePlacement)
             };
-            if piece == None {
-                return Err(FenError::InvalidPiecePlacement)
-            }
-            let num_pieces = if ('0'..='9').contains(&c) {c.to_digit(10).unwrap() as u8} else {1};
-            for _ in 0..num_pieces {
-                if let Some((_, square_piece)) = square_iter.next() {
-                    // Can not be none
-                    *square_piece = piece.unwrap();
+            let num_squares = if ('0'..='9').contains(&c) {c.to_digit(10).unwrap() as u8} else {1};
+            for _ in 0..num_squares {
+                if let Some((_, dest)) = square_iter.next() {
+                    *dest = square_piece;
                 } else {
                     return Err(FenError::InvalidPiecePlacement);
                 }
