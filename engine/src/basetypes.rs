@@ -121,31 +121,33 @@ pub struct Move {
     // Implement later
 }
 
+#[derive(Debug)]
 pub struct CastlingRights {
-    rights: Bitboard
+    rights: u8
 }
 
+// TODO: Make rights a newtype rather than u8. Maybe if CBF.
 impl CastlingRights {
-    pub const NONE: Bitboard = Bitboard(0);
-    pub const WK: Bitboard = Bitboard(1);
-    pub const WQ: Bitboard = Bitboard(2);
-    pub const BK: Bitboard = Bitboard(4);
-    pub const BQ: Bitboard = Bitboard(8);
-    pub const ALL: Bitboard = Bitboard(15);
+    pub const NONE: u8 = 0;
+    pub const WK: u8 = 1;
+    pub const WQ: u8 = 2;
+    pub const BK: u8 = 4;
+    pub const BQ: u8 = 8;
+    pub const ALL: u8 = 15;
 
-    pub fn new(rights: Bitboard) -> Self {
+    pub fn new(rights: u8) -> Self {
         CastlingRights { rights }
     }
 
-    pub fn has_rights(self, direction: Bitboard) -> bool {
-        (self.rights & direction) != Bitboard::EMPTY
+    pub fn has_rights(self, direction: u8) -> bool {
+        (self.rights & direction) != 0
     }
 
-    pub fn set_rights(&mut self, direction: Bitboard) {
+    pub fn set_rights(&mut self, direction: u8) {
         self.rights |= direction;
     }
 
-    pub fn remove_rights(&mut self, direction: Bitboard) {
+    pub fn remove_rights(&mut self, direction: u8) {
         self.rights &= !direction;
     }
 }

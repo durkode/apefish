@@ -3,10 +3,21 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{fen, basetypes::{Bitboard, PerPiece, PerSide, PerSquare, Piece, PieceKind, Side}};
+use crate::{Move, Square, basetypes::{Bitboard, CastlingRights, PerPiece, PerSide, PerSquare, Piece, PieceKind, Side}, fen};
 // use crate::basetypes::{Move, Piece, Side, Square}; // unused while Position methods below are commented out
 
-/// A chess position. Internal representation TBD.
+/// All of the metadata around gamestate (except actual pieces) at a given point in time
+#[derive(Debug)]
+pub struct PositionState {
+    pub active_colour: Side,
+    pub castling: CastlingRights,
+    pub half_move_clock: u8,
+    pub en_passant: Option<Square>,
+    pub full_move_number: u16,
+    pub next_move: Move
+}
+
+/// A chess position.
 #[derive(Debug, Clone)]
 pub struct Position {
     pub pieces: PerSide<PerPiece<Bitboard>>,
