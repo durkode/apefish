@@ -2,11 +2,14 @@
 
 use strum::{EnumCount, IntoEnumIterator};
 
-use std::str::FromStr;
+use std::{str::FromStr};
+
+use crate::Position;
 
 #[derive(Debug)]
 pub enum GenericErr {
-    SquareParseError
+    SquareParseError,
+    InvalidMove,
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -30,13 +33,15 @@ pub enum PieceKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece {
     pub side: Side,
-    pub piece_kind: PieceKind,
+    pub kind: PieceKind,
 }
 
 impl Piece {
 
+    pub const NO_PIECE_CHAR: char = '□';
+
     pub const fn to_unicode_char(self) -> char {
-        match (self.side, self.piece_kind) {
+        match (self.side, self.kind) {
             (Side::White, PieceKind::Pawn) => '♟',
             (Side::White, PieceKind::Knight) => '♞',
             (Side::White, PieceKind::Bishop) => '♝',
@@ -85,6 +90,15 @@ impl Square {
         // Unsafe code relies on File, Rank, Square remaining relationally static.
         unsafe { std::mem::transmute::<u8, Square>((file as u8) + (8 * rank as u8)) }
     }
+
+    pub fn rank(self) -> Rank {
+        unsafe { std::mem::transmute::<u8, Rank>((self as u8) % 8) }
+    }
+
+    pub fn file(self) -> File {
+        unsafe { std::mem::transmute::<u8, File>((self as u8) / 8) }
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -100,6 +114,12 @@ pub enum File {
     H
 }
 
+impl File {
+    pub fn as_num(self) -> u8 {
+        self as u8
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Rank {
@@ -113,9 +133,59 @@ pub enum Rank {
     R8 
 }
 
+impl Rank {
+    pub fn as_num(self) -> u8 {
+        self as u8
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Move {
-    // Implement later
+    // Internal representation of a move
+    // TODO: For performance reasons, Move should really be compressed into either a u64 (with all data, like Rustic)
+    // or a u16 (with minimal data like stockfish). For simplicity sake we will now just use a struct, but with plan to refactor later.
+    from: Square,
+    to: Square,
+    piece: PieceKind,
+    captured: Option<PieceKind>,
+    promotion: Option<PieceKind>,
+    castling: bool,
+    en_passant: bool,
+}
+
+pub struct InputMove {
+    // A move input from a user of the engine.
+    from: Square,
+    to: Square,
+    promotion: Option<PieceKind>
+}
+
+impl InputMove {
+    // Take an move from a client, combine it with the position, to create an internal move.
+    // Note, this assumes that the move is valid. If it is not valid, the internal move will be gibberish.
+    pub fn to_internal_move(&self, pos: &Position) -> Result<Move, GenericErr> {
+        
+        let Some(from_piece) = pos.piece_by_square[self.from] else { return Err(GenericErr::InvalidMove)};
+        let to_piece = pos.piece_by_square[self.to];
+        let en_passant = from_piece.kind == PieceKind::Pawn && to_piece.is_none() && self.from.file() != self.to.file();
+
+        Ok(Move {
+            from: self.from,
+            to: self.to,
+            piece: from_piece.kind,
+            captured: match pos.piece_by_square[self.to] {
+                Some(x) => Some(x.kind),
+                None if en_passant => Some(PieceKind::Pawn),
+                None => None
+            },
+            promotion: self.promotion,
+            castling: match from_piece.kind {
+                PieceKind::King => self.from.rank().as_num().abs_diff(self.to.rank().as_num()) == 2,
+                _ => false,
+            },
+            en_passant,
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone)]

@@ -63,18 +63,18 @@ fn fen_parse_pieces(piece_string: &str) -> Result<PerSquare<Option<Piece>>, FenE
         for c in rstring.chars() {
             let square_piece = match c {
                 '0'..='9' => None,
-                'P' => Some(Piece{piece_kind: PieceKind::Pawn, side: Side::White}),
-                'N' => Some(Piece{piece_kind: PieceKind::Knight, side: Side::White}),
-                'B' => Some(Piece{piece_kind: PieceKind::Bishop, side: Side::White}),
-                'R' => Some(Piece{piece_kind: PieceKind::Rook, side: Side::White}),
-                'Q' => Some(Piece{piece_kind: PieceKind::Queen, side: Side::White}),
-                'K' => Some(Piece{piece_kind: PieceKind::King, side: Side::White}),
-                'p' => Some(Piece{piece_kind: PieceKind::Pawn, side: Side::Black}),
-                'n' => Some(Piece{piece_kind: PieceKind::Knight, side: Side::Black}),
-                'b' => Some(Piece{piece_kind: PieceKind::Bishop, side: Side::Black}),
-                'r' => Some(Piece{piece_kind: PieceKind::Rook, side: Side::Black}),
-                'q' => Some(Piece{piece_kind: PieceKind::Queen, side: Side::Black}),
-                'k' => Some(Piece{piece_kind: PieceKind::King, side: Side::Black}),
+                'P' => Some(Piece{kind: PieceKind::Pawn, side: Side::White}),
+                'N' => Some(Piece{kind: PieceKind::Knight, side: Side::White}),
+                'B' => Some(Piece{kind: PieceKind::Bishop, side: Side::White}),
+                'R' => Some(Piece{kind: PieceKind::Rook, side: Side::White}),
+                'Q' => Some(Piece{kind: PieceKind::Queen, side: Side::White}),
+                'K' => Some(Piece{kind: PieceKind::King, side: Side::White}),
+                'p' => Some(Piece{kind: PieceKind::Pawn, side: Side::Black}),
+                'n' => Some(Piece{kind: PieceKind::Knight, side: Side::Black}),
+                'b' => Some(Piece{kind: PieceKind::Bishop, side: Side::Black}),
+                'r' => Some(Piece{kind: PieceKind::Rook, side: Side::Black}),
+                'q' => Some(Piece{kind: PieceKind::Queen, side: Side::Black}),
+                'k' => Some(Piece{kind: PieceKind::King, side: Side::Black}),
                 _ => return Err(FenError::InvalidPiecePlacement)
             };
             let num_squares = if ('0'..='9').contains(&c) {c.to_digit(10).unwrap() as u8} else {1};

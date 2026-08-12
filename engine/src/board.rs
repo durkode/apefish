@@ -3,8 +3,7 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{Move, Square, basetypes::{Bitboard, CastlingRights, PerPiece, PerSide, PerSquare, Piece, Side}, fen};
-// use crate::basetypes::{Move, Piece, Side, Square}; // unused while Position methods below are commented out
+use crate::{Square, basetypes::{Bitboard, CastlingRights, Move, PerPiece, PerSide, PerSquare, Piece, Side}, fen};
 
 const MAX_MOVES: usize = 1024;
 
@@ -16,7 +15,7 @@ pub struct PositionState {
     pub half_move_clock: u8,
     pub full_move_number: u16,
     pub en_passant: Option<Square>,
-    // pub next_move: Move
+    pub next_move: Option<Move>
 }
 
 impl PositionState {
@@ -27,7 +26,7 @@ impl PositionState {
             half_move_clock: 0,
             full_move_number: 0,
             en_passant: None,
-            // next_move: Move {  },
+            next_move: None,
         }
     }
 }
@@ -114,7 +113,7 @@ impl Position {
 
         for (square, piece) in self.piece_by_square.iter() {
             let Some(piece) = piece else { continue };
-            self.pieces[piece.side][piece.piece_kind] |= square.bitboard_mask();
+            self.pieces[piece.side][piece.kind] |= square.bitboard_mask();
             self.sides_pieces[piece.side] |= square.bitboard_mask();
         }
 
@@ -125,7 +124,22 @@ impl Position {
             println!("\n============= {side} ==========");
             for (piece_type, bb) in per_piece.iter() {
                 println!("\n{piece_type}");
-                bb.print(Piece{side, piece_kind: piece_type}.to_unicode_char());
+                bb.print(Piece{side, kind: piece_type}.to_unicode_char());
+            }
+        }
+
+        println!("\n================ BOARD ============\n");
+        let mut file_counter = 0;
+        for (_, piece) in self.piece_by_square.iter() {
+            let char = match piece {
+                Some(x) => x.to_unicode_char(),
+                None => Piece::NO_PIECE_CHAR,
+            };
+            print!("{char} ");
+            file_counter += 1;
+            if file_counter == 8 {
+                print!("\n");
+                file_counter = 0;
             }
         }
     }
