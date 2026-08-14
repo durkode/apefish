@@ -4,11 +4,23 @@
 
 // use apefish_engine::{Apefish, Move};
 
-use apefish_engine::Apefish;
+use apefish_engine::{Apefish, Engine, InputMove, Square};
 
 fn main() {
-    let af = Apefish::new();
+    let mut af = Apefish::new();
     af.print_debug_state();
+    af.make_move(InputMove{
+        from: Square::E2,
+        to: Square::E4,
+        promotion: None
+    }).unwrap();
+    af.print_board();
+        af.make_move(InputMove{
+        from: Square::E7,
+        to: Square::E6,
+        promotion: None
+    }).unwrap();
+    af.print_board();
 }
 
 // /// Render the current position to the terminal.

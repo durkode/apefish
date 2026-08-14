@@ -1,6 +1,6 @@
 use strum::EnumCount;
 
-use crate::basetypes::{CastlingRights, PerSquare, Piece, PieceKind, Rank, Side, Square};
+use crate::basetypes::{CastlingDirection, CastlingRights, PerSquare, Piece, PieceKind, Rank, Side, Square};
 
 // A lot of the fen related code isn't the most efficient. That said, Creating from FEN isn't a contested path
 // so will refactor it later if there is a need for performance.
@@ -106,10 +106,10 @@ fn fen_parse_castling_rights(castling_string: &str) -> Result<CastlingRights, Fe
     }
     for char in castling_string.chars() {
         match char {
-            'K' => castling_rights.set_rights(CastlingRights::WK),
-            'Q' => castling_rights.set_rights(CastlingRights::WQ),
-            'k' => castling_rights.set_rights(CastlingRights::BK),
-            'q' => castling_rights.set_rights(CastlingRights::BQ),
+            'K' => castling_rights.add_rights(CastlingDirection::WK),
+            'Q' => castling_rights.add_rights(CastlingDirection::WQ),
+            'k' => castling_rights.add_rights(CastlingDirection::BK),
+            'q' => castling_rights.add_rights(CastlingDirection::BQ),
             '-' if castling_string.len() == 1 => break,
             _ => return Err(FenError::InvalidCastlingRights)
         }

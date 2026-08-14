@@ -11,7 +11,7 @@ pub mod eval;
 pub mod movegen;
 pub mod search;
 
-pub use basetypes::{Move, Piece, PieceKind, Side, Square};
+pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
@@ -27,6 +27,9 @@ pub trait Engine {
 
     /// Legal moves for the side to move in the current position.
     fn legal_moves(&self) -> Vec<Move>;
+
+    // Make move
+    fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
 
     // /// Whether the game has ended, and how.
     // fn game_status(&self) -> GameStatus;
@@ -51,7 +54,11 @@ impl Apefish {
     }
 
     pub fn print_debug_state(&self) {
-        self.position.print_state();
+        self.position.print_debug_state();
+    }
+
+    pub fn print_board(&self) {
+        self.position.print_board();
     }
 }
 
@@ -66,6 +73,13 @@ impl Engine for Apefish {
 
     fn legal_moves(&self) -> Vec<Move> {
         unimplemented!()
+    }
+
+    fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {
+        let validated_move = to_make.to_internal_move(&self.position)?;
+        println!("{validated_move:?}");
+        self.position.make_move(validated_move)?;
+        Ok(())
     }
 
     // fn game_status(&self) -> GameStatus {

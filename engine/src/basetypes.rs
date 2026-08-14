@@ -10,6 +10,9 @@ use crate::Position;
 pub enum GenericErr {
     SquareParseError,
     InvalidMove,
+    IllegalMove,
+    InvalidCastleSquares,
+    InvalidCastleChecked
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -17,6 +20,15 @@ pub enum GenericErr {
 pub enum Side {
     White = 0,
     Black,
+}
+
+impl Side {
+    pub fn other(&self) -> Side {
+        match self {
+            Side::White => Side::Black,
+            Side::Black => Side::White,
+        }
+    }
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -92,11 +104,11 @@ impl Square {
     }
 
     pub fn rank(self) -> Rank {
-        unsafe { std::mem::transmute::<u8, Rank>((self as u8) % 8) }
+        unsafe { std::mem::transmute::<u8, Rank>((self as u8) / 8) }
     }
 
     pub fn file(self) -> File {
-        unsafe { std::mem::transmute::<u8, File>((self as u8) / 8) }
+        unsafe { std::mem::transmute::<u8, File>((self as u8) % 8) }
     }
 
 }
@@ -153,22 +165,37 @@ pub struct Move {
     en_passant: bool,
 }
 
+impl Move {
+
+    pub fn to_input_move(&self) -> InputMove {
+        InputMove { from: self.from, to: self.to, promotion: self.promotion }
+    }
+
+    pub fn from(&self) -> Square {self.from}
+    pub fn to(&self) -> Square {self.to}
+    pub fn piece(&self) -> PieceKind {self.piece}
+    pub fn captured(&self) -> Option<PieceKind> {self.captured}
+    pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
+    pub fn castling(&self) -> bool {self.castling}
+    pub fn en_passant(&self) -> bool {self.en_passant}
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct InputMove {
     // A move input from a user of the engine.
-    from: Square,
-    to: Square,
-    promotion: Option<PieceKind>
+    pub from: Square,
+    pub to: Square,
+    pub promotion: Option<PieceKind>
 }
 
 impl InputMove {
     // Take an move from a client, combine it with the position, to create an internal move.
     // Note, this assumes that the move is valid. If it is not valid, the internal move will be gibberish.
     pub fn to_internal_move(&self, pos: &Position) -> Result<Move, GenericErr> {
-        
+    
         let Some(from_piece) = pos.piece_by_square[self.from] else { return Err(GenericErr::InvalidMove)};
         let to_piece = pos.piece_by_square[self.to];
         let en_passant = from_piece.kind == PieceKind::Pawn && to_piece.is_none() && self.from.file() != self.to.file();
-
         Ok(Move {
             from: self.from,
             to: self.to,
@@ -188,35 +215,134 @@ impl InputMove {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastlingDirection {
+    WK,
+    WQ,
+    BK,
+    BQ
+}
+
+impl CastlingDirection {
+
+    const WQ_UNATTACKED_SQUARES: &[Square] = &[Square::C1, Square::D1, Square::E1];
+    const WK_UNATTACKED_SQUARES: &[Square] = &[Square::E1, Square::F1, Square::G1];
+    const BQ_UNATTACKED_SQUARES: &[Square] = &[Square::B8, Square::C8, Square::D8];
+    const BK_UNATTACKED_SQUARES: &[Square] = &[Square::F8, Square::G8];
+
+    pub fn direction(from: Square, to: Square) -> Option<CastlingDirection> {
+        match (from, to) {
+            (Square::E1, Square::C1) => Some(CastlingDirection::WQ),
+            (Square::E1, Square::G1) => Some(CastlingDirection::WK),
+            (Square::E8, Square::C8) => Some(CastlingDirection::BQ),
+            (Square::E8, Square::G8) => Some(CastlingDirection::BK),
+            _ => None
+        }
+    }
+
+    pub fn rights(self) -> CastlingRights {
+        match self {
+            CastlingDirection::WQ => CastlingRights::WQ,
+            CastlingDirection::WK => CastlingRights::WK,
+            CastlingDirection::BQ => CastlingRights::BQ,
+            CastlingDirection::BK => CastlingRights::BK,            
+        }
+    }
+
+    pub fn unattacked_squares_required(self) -> &'static [Square] {
+        match self {
+            CastlingDirection::WQ => CastlingDirection::WQ_UNATTACKED_SQUARES,
+            CastlingDirection::WK => CastlingDirection::WK_UNATTACKED_SQUARES,
+            CastlingDirection::BQ => CastlingDirection::BQ_UNATTACKED_SQUARES,
+            CastlingDirection::BK => CastlingDirection::BK_UNATTACKED_SQUARES,            
+        }
+    }
+
+    pub fn rook_from(self) -> Square {
+        match self {
+            CastlingDirection::WQ => Square::A1,
+            CastlingDirection::WK => Square::H1,
+            CastlingDirection::BQ => Square::A8,
+            CastlingDirection::BK => Square::H8,
+        }
+    }
+
+    pub fn rook_to(self) -> Square {
+        match self {
+            CastlingDirection::WQ => Square::D1,
+            CastlingDirection::WK => Square::F1,
+            CastlingDirection::BQ => Square::D8,
+            CastlingDirection::BK => Square::F8,
+        }
+    }
+}
+
+// Struct to both store castling rights, and castling related logic.
 #[derive(Debug, Copy, Clone)]
 pub struct CastlingRights {
     rights: u8
 }
 
-// TODO: Make rights a newtype rather than u8. Maybe if CBF.
 impl CastlingRights {
-    pub const NONE: u8 = 0;
-    pub const WK: u8 = 1;
-    pub const WQ: u8 = 2;
-    pub const BK: u8 = 4;
-    pub const BQ: u8 = 8;
-    pub const ALL: u8 = 15;
+    pub const NONE: CastlingRights = CastlingRights{rights: 0};
+    pub const WK: CastlingRights = CastlingRights{rights: 1};
+    pub const WQ: CastlingRights = CastlingRights{rights: 2};
+    pub const BK: CastlingRights = CastlingRights{rights: 4};
+    pub const BQ: CastlingRights = CastlingRights{rights: 8};
+    pub const ALL: CastlingRights = CastlingRights{rights: 15};
 
-    pub fn new(rights: u8) -> Self {
-        CastlingRights { rights }
+    pub fn new(rights: CastlingRights) -> Self {
+        rights.clone()
     }
 
-    pub fn has_rights(self, direction: u8) -> bool {
-        (self.rights & direction) != 0
+    pub fn any_rights(self) -> bool {
+        return self.rights != 0
     }
 
-    pub fn set_rights(&mut self, direction: u8) {
-        self.rights |= direction;
+    pub fn has_rights(self, direction: CastlingDirection) -> bool {
+        (self.rights & direction.rights().rights) != 0
     }
 
-    pub fn remove_rights(&mut self, direction: u8) {
-        self.rights &= !direction;
+    pub fn add_rights(&mut self, direction: CastlingDirection) {
+        self.rights |= direction.rights().rights;
     }
+
+    pub fn remove_rights(&mut self, direction: CastlingDirection) {
+        self.rights &= !direction.rights().rights;
+    }
+
+    pub fn remove_rights_for_move(&mut self, side: Side, from: Square, piece_kind: PieceKind) {
+        if self.any_rights() {
+            match (side, from, piece_kind) {
+                // White
+                (Side::White, Square::E1, PieceKind::King) => { 
+                    self.remove_rights(CastlingDirection::WK);
+                    self.remove_rights(CastlingDirection::WQ);
+                },
+                (Side::White, Square::A1, PieceKind::Rook) => {
+                    self.remove_rights(CastlingDirection::WQ);
+                },
+                (Side::White, Square::H1, PieceKind::Rook) => {
+                    self.remove_rights(CastlingDirection::WK);
+                },
+                
+                // Black
+                (Side::Black, Square::E8, PieceKind::King) => { 
+                    self.remove_rights(CastlingDirection::BK);
+                    self.remove_rights(CastlingDirection::BQ);
+                },
+                (Side::White, Square::A8, PieceKind::Rook) => {
+                    self.remove_rights(CastlingDirection::BQ);
+                },
+                (Side::White, Square::H8, PieceKind::Rook) => {
+                    self.remove_rights(CastlingDirection::BK);
+                },
+                // No match
+                _ => {}
+            }
+        }
+    }
+        
 }
 
 // Bitboards. This is a 'NewType' over a u64, and as such AI has been used to allow 
@@ -234,6 +360,7 @@ impl Bitboard {
     }
 
     // If this bitboard is a mask, return the corresponding square
+    // TODO: perhaps this should panic instead of return an option for perf??
     pub fn single_square(self) -> Option<Square> {
         // Unsafe cast code relies on the fact that Square has complete mapping in range 0..=63
         match self.0.count_ones() {
