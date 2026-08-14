@@ -14,12 +14,14 @@ fn main() {
         to: Square::E4,
         promotion: None
     }).unwrap();
+    af.print_debug_state();
     af.print_board();
         af.make_move(InputMove{
         from: Square::E7,
         to: Square::E6,
         promotion: None
     }).unwrap();
+    af.print_debug_state();
     af.print_board();
 }
 

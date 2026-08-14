@@ -3,7 +3,7 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen};
+use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen};
 
 const MAX_MOVES: usize = 1024;
 
@@ -240,25 +240,19 @@ impl Position {
     }
 
     pub fn print_board(&self) {
-        let mut file_counter = 0;
-        let mut rank_counter = 8;
-        for (_, piece) in self.piece_by_square.iter() {
-            if file_counter == 0 {
-                print!("{rank_counter}  ");
+        for r in Rank::iter().rev() {
+            let rank_num = r as u8;
+            print!("{rank_num}  ");
+            for f in File::iter() {
+                let char = match self.piece_by_square[Square::from_coords(f, r)] {
+                    Some(x) => x.to_unicode_char(),
+                    None => Piece::NO_PIECE_CHAR                    
+                };
+                print!("{char} ");
             }
-            let char = match piece {
-                Some(x) => x.to_unicode_char(),
-                None => Piece::NO_PIECE_CHAR,
-            };
-            print!("{char} ");
-            file_counter += 1;
-            if file_counter == 8 {
-                print!("\n");
-                file_counter = 0;
-                rank_counter -= 1;
-            }
+            print!("\n");
         }
-        println!("\n   A B C D E F G H")
+        println!("\n   A B C D E F G H");
     }
 
 

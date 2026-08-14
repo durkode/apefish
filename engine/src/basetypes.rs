@@ -130,6 +130,10 @@ impl File {
     pub fn as_num(self) -> u8 {
         self as u8
     }
+
+    pub fn iter() -> FileIter {
+        <File as IntoEnumIterator>::iter()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -148,6 +152,10 @@ pub enum Rank {
 impl Rank {
     pub fn as_num(self) -> u8 {
         self as u8
+    }
+
+    pub fn iter() -> RankIter {
+        <Rank as IntoEnumIterator>::iter()
     }
 }
 
