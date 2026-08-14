@@ -171,6 +171,10 @@ impl Position {
                 &castling_direction.unwrap().rook_from(), 
                 self.piece_by_square[castling_direction.unwrap().rook_from()].unwrap()
             );
+            self.add_piece(
+                &castling_direction.unwrap().rook_to(), 
+                Piece{side: self.state.active_side, kind: PieceKind::Rook}
+            );
         } else if self.is_attacked(self.king_square(), self.state.active_side) {
             // Oh no, we are in check. Revert everything back and return an error
             self.remove_piece(&m.to(), new_piece);
@@ -241,7 +245,7 @@ impl Position {
 
     pub fn print_board(&self) {
         for r in Rank::iter().rev() {
-            let rank_num = r as u8;
+            let rank_num = r as u8 + 1;
             print!("{rank_num}  ");
             for f in File::iter() {
                 let char = match self.piece_by_square[Square::from_coords(f, r)] {

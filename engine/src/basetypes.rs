@@ -215,7 +215,7 @@ impl InputMove {
             },
             promotion: self.promotion,
             castling: match from_piece.kind {
-                PieceKind::King => self.from.rank().as_num().abs_diff(self.to.rank().as_num()) == 2,
+                PieceKind::King => self.from.file().as_num().abs_diff(self.to.file().as_num()) == 2,
                 _ => false,
             },
             en_passant,
