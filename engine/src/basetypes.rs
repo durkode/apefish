@@ -127,8 +127,8 @@ pub enum File {
 }
 
 impl File {
-    pub fn as_num(self) -> u8 {
-        self as u8
+    pub const fn as_num(self) -> usize {
+        self as usize
     }
 
     pub fn iter() -> FileIter {
@@ -150,8 +150,8 @@ pub enum Rank {
 }
 
 impl Rank {
-    pub fn as_num(self) -> u8 {
-        self as u8
+    pub const fn as_num(self) -> usize {
+        self as usize
     }
 
     pub fn iter() -> RankIter {
@@ -367,6 +367,10 @@ impl Bitboard {
         Bitboard(bits)
     }
 
+    pub const fn union(self, other: Bitboard) -> Bitboard {
+        Bitboard(self.0 | other.0)
+    }
+
     // If this bitboard is a mask, return the corresponding square
     // TODO: perhaps this should panic instead of return an option for perf??
     pub fn single_square(self) -> Option<Square> {
@@ -461,6 +465,28 @@ impl std::ops::ShrAssign<u32> for Bitboard {
         self.0 >>= rhs;
     }
 }
+
+// Some useful bitboards
+pub const BB_RANKS: [Bitboard; 8] = {
+    let mut res = [Bitboard::from(0); 8];
+    let mut n = 0;
+    while n < 8 {
+        res[n] = Bitboard::from(0b0000000000000000000000000000000000000000000000000000000011111111 << n*8);
+        n += 1;
+    }
+    res
+};
+
+pub const BB_FILES: [Bitboard; 8] = {
+    let mut res = [Bitboard::from(0); 8];
+    let mut n = 0;
+    while n < 8 {
+        res[n] = Bitboard::from(0b0000000100000001000000010000000100000001000000010000000100000001 << n);
+        n += 1;
+    }
+    res
+};
+
 
 // Side and piece containers
 

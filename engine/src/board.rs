@@ -221,7 +221,7 @@ impl Position {
     }
 
     fn is_attacked(&self, _square: Square, _candidate_square_side: Side) -> bool {
-        // TODO: implement checks for check 
+        // TODO: implement
         false 
     }
 
