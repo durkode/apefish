@@ -564,10 +564,10 @@ pub struct PerSquare<T>([T; Square::COUNT]);
 
 impl<T> PerSquare<T>
 where
-    T: Copy
+    T: Clone
 {
     pub fn new(default_value: T) -> Self {
-        Self([default_value; Square::COUNT])
+        Self(std::array::from_fn(|_| default_value.clone()))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Square, &T)> {
