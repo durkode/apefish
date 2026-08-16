@@ -118,8 +118,8 @@ impl Position {
 
         for (square, piece) in self.piece_by_square.iter() {
             let Some(piece) = piece else { continue };
-            self.pieces[piece.side][piece.kind] |= square.bitboard_mask();
-            self.sides_pieces[piece.side] |= square.bitboard_mask();
+            self.pieces[piece.side][piece.kind] |= square.bitboard();
+            self.sides_pieces[piece.side] |= square.bitboard();
         }
 
     }
@@ -208,15 +208,15 @@ impl Position {
 
     // Add a piece to a square, assumes square is empty.
     fn add_piece(&mut self, square: &Square, piece: Piece) {
-        self.pieces[piece.side][piece.kind] |= square.bitboard_mask();
-        self.sides_pieces[piece.side] |= square.bitboard_mask();
+        self.pieces[piece.side][piece.kind] |= square.bitboard();
+        self.sides_pieces[piece.side] |= square.bitboard();
         self.piece_by_square[*square] = Some(piece);
     }
 
     // Remove a piece from a square.
     fn remove_piece(&mut self, square: &Square, piece: Piece) {
-        self.pieces[piece.side][piece.kind] &= !square.bitboard_mask();
-        self.sides_pieces[piece.side] &= !square.bitboard_mask();
+        self.pieces[piece.side][piece.kind] &= !square.bitboard();
+        self.sides_pieces[piece.side] &= !square.bitboard();
         self.piece_by_square[*square] = None;
     }
 

@@ -4,7 +4,7 @@
 use strum::{EnumCount, IntoEnumIterator};
 
 use crate::{PieceKind, Square};
-use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, File, Move, PerSquare, Rank};
+use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, File, Move, PerPiece, PerSquare, Rank};
 use crate::board::Position;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub(super) struct PieceMove {
 
 // 
 
-pub(super) const KING_MOVES: [PieceMove; 8] = [
+const KING_MOVES: [PieceMove; 8] = [
     PieceMove {
         offset: SquareOffset::NORTH,
         impossible: BB_RANKS[Rank::R8.as_num()]
@@ -83,7 +83,7 @@ pub(super) const KING_MOVES: [PieceMove; 8] = [
     }
 ];
 
-pub(super) const KNIGHT_MOVES: [PieceMove; 8] = [
+const KNIGHT_MOVES: [PieceMove; 8] = [
     PieceMove {
         offset: SquareOffset::KNIGHT_NNW,
         impossible: BB_RANKS[Rank::R8.as_num()].union(BB_RANKS[Rank::R7.as_num()]).union(BB_FILES[File::A.as_num()])
@@ -118,7 +118,7 @@ pub(super) const KNIGHT_MOVES: [PieceMove; 8] = [
     },
 ];
 
-pub(super) const ROOK_SLIDES: [PieceMove; 4] = [
+const ROOK_SLIDES: [PieceMove; 4] = [
     PieceMove {
         offset: SquareOffset::NORTH,
         impossible: BB_RANKS[Rank::R8.as_num()]
@@ -137,7 +137,7 @@ pub(super) const ROOK_SLIDES: [PieceMove; 4] = [
     }
 ];
 
-pub(super) const BISHOP_SLIDES: [PieceMove; 4] = [
+const BISHOP_SLIDES: [PieceMove; 4] = [
     PieceMove {
         offset: SquareOffset::NORTH_WEST,
         impossible: BB_RANKS[Rank::R8.as_num()].union(BB_FILES[File::A.as_num()])
@@ -156,6 +156,18 @@ pub(super) const BISHOP_SLIDES: [PieceMove; 4] = [
     }
 ];
 
+// Indexed by PieceKind. Pawn and Queen have no entry here: pawn moves aren't modelled as
+// PieceMove offsets, and queen moves are the union of the rook and bishop slides.
+pub(super) const PIECE_DIRECTIONS: PerPiece<&[PieceMove]> = PerPiece::from_array([
+    &[],            // Pawn
+    &KNIGHT_MOVES,
+    &BISHOP_SLIDES,
+    &ROOK_SLIDES,
+    &[],            // Queen
+    &KING_MOVES,
+]);
+
+
 // Guaranteed moves + potential takes
 #[derive(Clone, Copy, Debug)]
 pub struct MoveTakePair {
@@ -163,18 +175,18 @@ pub struct MoveTakePair {
     pub potential_takes: Bitboard
 }
 
+pub const PRECALCULATED_PIECE_KINDS = [PieceKind::Bishop, PieceKind::King, PieceKind::Knight, PieceKind::Rook];
 pub const KING_BLOCKER_COMBINATIONS: usize = 2usize.pow(8);
 pub const KNIGHT_BLOCKER_COMBINATIONS: usize =  2usize.pow(8);
 pub const BISHOP_BLOCKER_COMBINATIONS: usize = 2usize.pow(13);
 pub const ROOK_BLOCKER_COMBINATIONS: usize = 2usize.pow(14);
 
+
 // Holds the lookup tables
 struct MoveGen {
-    // Hold the generated masks, mapping square -> available moves on an empty board
-    king_move_mask: PerSquare<Bitboard>,
-    knight_move_mask: PerSquare<Bitboard>,
-    bishop_move_mask: PerSquare<Bitboard>,
-    rook_move_mask: PerSquare<Bitboard>,
+    // Hold the generated masks, mapping square -> available moves on an empty board.
+    // Indexed by piece kind; Pawn and Queen entries are unused (see PIECE_DIRECTIONS).
+    move_mask: PerPiece<PerSquare<Bitboard>>,
 
     // Mapping of (Square + Blockers) -> Moves
     king_moves: PerSquare<[Bitboard; KING_BLOCKER_COMBINATIONS]>,
@@ -191,46 +203,94 @@ struct MoveGen {
 
 impl MoveGen {
     pub fn init() -> Self {
-        let mut king_move_mask: PerSquare<Bitboard> = PerSquare::new(Bitboard(0));
-        let mut knight_move_mask: PerSquare<Bitboard> = PerSquare::new(Bitboard(0));
-        let mut bishop_move_mask: PerSquare<Bitboard> = PerSquare::new(Bitboard(0));
-        let mut rook_move_mask: PerSquare<Bitboard> = PerSquare::new(Bitboard(0));
+        let mut move_mask: PerPiece<PerSquare<Bitboard>> = PerPiece::new(PerSquare::new(Bitboard(0)));
 
         let mut king_moves: PerSquare<[Bitboard; KING_BLOCKER_COMBINATIONS]> = PerSquare::new([Bitboard(0); KING_BLOCKER_COMBINATIONS]);
         let mut knight_moves: PerSquare<[Bitboard; KNIGHT_BLOCKER_COMBINATIONS]> = PerSquare::new([Bitboard(0); KNIGHT_BLOCKER_COMBINATIONS]);
         let mut bishop_move_and_takes: PerSquare<Vec<MoveTakePair>> = PerSquare::new(vec![MoveTakePair{moves: Bitboard(0), potential_takes: Bitboard(0)}; BISHOP_BLOCKER_COMBINATIONS]);
         let mut rook_move_and_takes: PerSquare<Vec<MoveTakePair>> = PerSquare::new(vec![MoveTakePair{moves: Bitboard(0), potential_takes: Bitboard(0)}; ROOK_BLOCKER_COMBINATIONS]);
 
-        // Process Masks
+        // Generate blank move masks
         for s in Square::iter() {
-            for piece_kind in PieceKind::iter() {
-                let movement = Bitboard::from(0);
-                match piece_kind {
-                    PieceKind::King | PieceKind::Knight => {
-
-                    },
-                    PieceKind::Bishop | PieceKind::Rook => {
-
-                    },
-                    _ => {}
+            for piece_kind in PRECALCULATED_PIECE_KINDS {
+                    move_mask[piece_kind][s] = MoveGen::calculate_moves_from_square(s, piece_kind, Bitboard::from(0)).moves;
                 }
             }
         }
 
         // Process Blocker combos
+        // For every square and piecetype, iterate through 0..MAX_BLOCKERS (non-inclusive), project that onto the move path, and calculate the moves.
+        for pk in PRECALCULATED_PIECE_KINDS {
+            let max_blockers = match pk {
+                PieceKind::Bishop => BISHOP_BLOCKER_COMBINATIONS,
+                PieceKind::King => KING_BLOCKER_COMBINATIONS,
+                PieceKind::Knight => KNIGHT_BLOCKER_COMBINATIONS,
+                PieceKind::Rook => ROOK_BLOCKER_COMBINATIONS
+            };
+            for s in Square::iter() {
+                for n: usize in 0..max_blockers {
+                    let blockers = Bitboard::from(n);
+                    move_take_pair = MoveGen::calculate_moves_from_square(s, piece_kind, blockers).moves;
+                }
+            }
+        }
+        }
 
 
         Self {
-            king_move_mask,
-            knight_move_mask,
-            bishop_move_mask,
-            rook_move_mask,
+            move_mask,
             king_moves,
             knight_moves,
             bishop_move_and_takes,
             rook_move_and_takes,
         }
     }
+
+    // For a given square and piece type, calculate all the possible moves with the given blockers (square occupancy).
+    // Does not calculate a) pawn moves or b) castling.
+    // Pawn moves may be added here in the future, still undecided.
+    // This function is used for initial computation and then caching, should not be used in live search / movegen path.
+    //
+    // Returns a MoveTakePair with 2 bitboards:
+    //    - moves: Bitboard of all the blank squares the piece can move to
+    //    - potential_takes: Bitboard of occupied squares that mark potential takes. Note that this includes squares with the current side occupying,
+    //                       so will need to & with enemy occupancy to confirm.
+    fn calculate_moves_from_square(square: Square, piece_kind: PieceKind, blocker_occupancy: Bitboard) -> MoveTakePair {
+        let directions = PIECE_DIRECTIONS[piece_kind];
+        let square_bb = square.bitboard();
+        let mut moves = Bitboard::from(0);
+        for d in directions {
+            match piece_kind {
+                PieceKind::King | PieceKind::Knight => {
+                    // For King and Knight, just make the move and add to moves
+                    if (square_bb & d.impossible) != Bitboard::EMPTY { continue; }
+                    if d.offset > 0 {
+                        moves |= square_bb << d.offset as u32;
+                    } else {
+                        moves |= square_bb >> -d.offset as u32;
+                    }
+                },
+                PieceKind::Bishop | PieceKind::Rook => {
+                    // For Bishop and Rook, keep pushing in direction adding to moves as you go
+                    // until you hit an impossible move (end of board) or another piece.
+                    let mut curr = square_bb;
+                    while (curr & d.impossible) == Bitboard::EMPTY {
+                        if d.offset > 0 {
+                            curr = square_bb << d.offset as u32;
+                        } else {
+                            curr = square_bb >> -d.offset as u32;
+                        }
+                        moves |= curr;
+                        if (curr & blocker_occupancy) != Bitboard::EMPTY { break; }
+                    }
+                },
+                _ => { panic!("Invalid piece in calculate_moves_from_square()")}
+            } 
+        }
+
+        MoveTakePair { moves: moves & !blocker_occupancy, potential_takes: moves & blocker_occupancy }
+    }
+
 }
 
 

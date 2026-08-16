@@ -87,7 +87,7 @@ pub enum Square {
 
 impl Square {
     
-    pub const fn bitboard_mask(self) -> Bitboard {
+    pub const fn bitboard(self) -> Bitboard {
         Bitboard(1u64 << self as u8)
     }
 
@@ -493,6 +493,12 @@ pub const BB_FILES: [Bitboard; 8] = {
 // PerPiece
 #[derive(Debug, Clone, Copy)]
 pub struct PerPiece<T>([T; PieceKind::COUNT]);
+
+impl<T> PerPiece<T> {
+    pub const fn from_array(values: [T; PieceKind::COUNT]) -> Self {
+        Self(values)
+    }
+}
 
 impl<T> PerPiece<T>
 where
