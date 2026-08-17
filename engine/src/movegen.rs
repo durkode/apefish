@@ -1,10 +1,8 @@
 // //! Move generation, legality, and game-end detection.
 
+use strum::{IntoEnumIterator};
 
-use strum::{EnumCount, IntoEnumIterator};
-
-use crate::{PieceKind, Square};
-use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, File, Move, PerPiece, PerSquare, Rank};
+use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumKey, EnumMap, File, IndexedPieceKind, PieceKind, SlidingPieceKind, Move, PerSquare, Rank, Square};
 use crate::board::Position;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,93 +154,93 @@ const BISHOP_SLIDES: [PieceMove; 4] = [
     }
 ];
 
-// Indexed by PieceKind. Pawn and Queen have no entry here: pawn moves aren't modelled as
-// PieceMove offsets, and queen moves are the union of the rook and bishop slides.
-pub(super) const PIECE_DIRECTIONS: PerPiece<&[PieceMove]> = PerPiece::from_array([
-    &[],            // Pawn
-    &KNIGHT_MOVES,
-    &BISHOP_SLIDES,
-    &ROOK_SLIDES,
-    &[],            // Queen
-    &KING_MOVES,
-]);
-
-
-// Guaranteed moves + potential takes
-#[derive(Clone, Copy, Debug)]
-pub struct MoveTakePair {
-    pub moves: Bitboard,
-    pub potential_takes: Bitboard
+// Pawn and Queen have no entry: pawn moves aren't modelled as PieceMove offsets,
+// and queen moves are the union of the rook and bishop slides.
+pub(super) const fn indexed_piece_directions(piece: IndexedPieceKind) -> &'static [PieceMove] {
+    match piece {
+        IndexedPieceKind::Knight => &KNIGHT_MOVES,
+        IndexedPieceKind::Bishop => &BISHOP_SLIDES,
+        IndexedPieceKind::Rook => &ROOK_SLIDES,
+        IndexedPieceKind::King => &KING_MOVES,
+    }
 }
 
-pub const PRECALCULATED_PIECE_KINDS = [PieceKind::Bishop, PieceKind::King, PieceKind::Knight, PieceKind::Rook];
-pub const KING_BLOCKER_COMBINATIONS: usize = 2usize.pow(8);
-pub const KNIGHT_BLOCKER_COMBINATIONS: usize =  2usize.pow(8);
-pub const BISHOP_BLOCKER_COMBINATIONS: usize = 2usize.pow(13);
-pub const ROOK_BLOCKER_COMBINATIONS: usize = 2usize.pow(14);
 
+// A pair of bitboards showing where a piece can move
+// - final_exclusive: Possible moves excluding the final square (edge of board, occupied square)
+// - final_inclusive: Possible moves including the final square.
+#[derive(Clone, Copy, Debug)]
+pub struct PossibleMoves {
+    pub final_exclusive: Bitboard,
+    pub final_inclusive: Bitboard
+}
+
+pub const BISHOP_BLOCKER_COMBINATIONS: u64 = 2u64.pow(9);
+pub const ROOK_BLOCKER_COMBINATIONS: u64 = 2u64.pow(12);
 
 // Holds the lookup tables
 struct MoveGen {
-    // Hold the generated masks, mapping square -> available moves on an empty board.
-    // Indexed by piece kind; Pawn and Queen entries are unused (see PIECE_DIRECTIONS).
-    move_mask: PerPiece<PerSquare<Bitboard>>,
-
-    // Mapping of (Square + Blockers) -> Moves
-    king_moves: PerSquare<[Bitboard; KING_BLOCKER_COMBINATIONS]>,
-    knight_moves: PerSquare<[Bitboard; KNIGHT_BLOCKER_COMBINATIONS]>,
-    // Mapping of (Square + Blockers) -> Moves + Potential Takes
-    // Use a vector as to not bust stack limit. stack def is left here to show what we are trying to do
-    // TODO: test increasing stack size limit and moving to stack.
-    // TODO: test whether using PerSquare slows performance at all vs raw array
-    // bishop_move_and_takes: PerSquare<[MoveTakePair; BISHOP_BLOCKER_COMBINATIONS]>,
-    // rook_move_and_takes: PerSquare<[MoveTakePair; ROOK_BLOCKER_COMBINATIONS]>
-    bishop_move_and_takes: PerSquare<Vec<MoveTakePair>>,
-    rook_move_and_takes: PerSquare<Vec<MoveTakePair>>,
+    // For a given indexed piece (Bishop, King, Knight, Rook), map from square to available moves on empty board
+    move_mask: EnumMap<IndexedPieceKind, PerSquare<Bitboard>>,
+    // For a given sliding piece, map from square to all the positions blockers can be that affect moves
+    blocker_mask: EnumMap<SlidingPieceKind, PerSquare<Bitboard>>,
+    // For a given sliding piece and square, hold a vector of available moves indexed by blocker hash.
+    sliding_moves: EnumMap<SlidingPieceKind, PerSquare<Vec<Bitboard>>>,
 }
 
 impl MoveGen {
     pub fn init() -> Self {
-        let mut move_mask: PerPiece<PerSquare<Bitboard>> = PerPiece::new(PerSquare::new(Bitboard(0)));
+        let mut move_mask: EnumMap<IndexedPieceKind, PerSquare<Bitboard>> = EnumMap::new(PerSquare::new(Bitboard::from(0)));
+        let mut blocker_mask: EnumMap<SlidingPieceKind, PerSquare<Bitboard>> = EnumMap::new(PerSquare::new(Bitboard::from(0)));
+        let mut sliding_moves: EnumMap<SlidingPieceKind, PerSquare<Vec<Bitboard>>> = EnumMap::from_fn(|_| PerSquare::new(vec![]));
+        // Initialise sliding move vectors to be the right size
+        for (spk, x) in sliding_moves.iter_mut() {
+            for (square, v) in x.iter_mut() {
+                let vec_length = match spk {
+                    SlidingPieceKind::Bishop => BISHOP_BLOCKER_COMBINATIONS as usize,
+                    SlidingPieceKind::Rook => ROOK_BLOCKER_COMBINATIONS as usize,
+                };
+                v.resize_with(vec_length, Default::default);
+            } 
+        }
 
-        let mut king_moves: PerSquare<[Bitboard; KING_BLOCKER_COMBINATIONS]> = PerSquare::new([Bitboard(0); KING_BLOCKER_COMBINATIONS]);
-        let mut knight_moves: PerSquare<[Bitboard; KNIGHT_BLOCKER_COMBINATIONS]> = PerSquare::new([Bitboard(0); KNIGHT_BLOCKER_COMBINATIONS]);
-        let mut bishop_move_and_takes: PerSquare<Vec<MoveTakePair>> = PerSquare::new(vec![MoveTakePair{moves: Bitboard(0), potential_takes: Bitboard(0)}; BISHOP_BLOCKER_COMBINATIONS]);
-        let mut rook_move_and_takes: PerSquare<Vec<MoveTakePair>> = PerSquare::new(vec![MoveTakePair{moves: Bitboard(0), potential_takes: Bitboard(0)}; ROOK_BLOCKER_COMBINATIONS]);
-
-        // Generate blank move masks
-        for s in Square::iter() {
-            for piece_kind in PRECALCULATED_PIECE_KINDS {
-                    move_mask[piece_kind][s] = MoveGen::calculate_moves_from_square(s, piece_kind, Bitboard::from(0)).moves;
+        // Generate move and blocker masks
+        for ipk in IndexedPieceKind::iter() {
+            for s in Square::iter() {
+                let moves = MoveGen::calculate_moves_from_square(s, ipk.into(), Bitboard::from(0));
+                move_mask[ipk][s] = moves.final_inclusive;
+                if let Ok(spk) = SlidingPieceKind::try_from(PieceKind::from(ipk)) {
+                    blocker_mask[spk][s] = moves.final_exclusive;
                 }
             }
         }
 
         // Process Blocker combos
-        // For every square and piecetype, iterate through 0..MAX_BLOCKERS (non-inclusive), project that onto the move path, and calculate the moves.
-        for pk in PRECALCULATED_PIECE_KINDS {
-            let max_blockers = match pk {
-                PieceKind::Bishop => BISHOP_BLOCKER_COMBINATIONS,
-                PieceKind::King => KING_BLOCKER_COMBINATIONS,
-                PieceKind::Knight => KNIGHT_BLOCKER_COMBINATIONS,
-                PieceKind::Rook => ROOK_BLOCKER_COMBINATIONS
-            };
+        // For every square and SlidingPieceKind, iterate through 0..MAX_BLOCKERS (non-inclusive), project that onto the move path, and calculate the moves.
+        for spk in SlidingPieceKind::iter() {
+            let ipk = IndexedPieceKind::try_from(PieceKind::from(spk)).unwrap();
             for s in Square::iter() {
-                for n: usize in 0..max_blockers {
-                    let blockers = Bitboard::from(n);
-                    move_take_pair = MoveGen::calculate_moves_from_square(s, piece_kind, blockers).moves;
+                let blocker_mask = blocker_mask[spk][s].to();
+
+                // Use the Carrie Rippler algo to enumerate over all possible blockers for a given mask
+                let mut blocker: u64 = 0;
+                loop {
+                    blocker = blocker.wrapping_sub(blocker_mask) & blocker_mask;
+                    let bb = Bitboard::from(blocker);
+                    let moves = MoveGen::calculate_moves_from_square(s, ipk, bb);
+                    sliding_moves[spk][s][bb.compressed_index(blocker_mask)] = moves.final_inclusive;
+                    if blocker == 0 {
+                        break;
+                    }
                 }
             }
-        }
         }
 
 
         Self {
             move_mask,
-            king_moves,
-            knight_moves,
-            bishop_move_and_takes,
-            rook_move_and_takes,
+            blocker_mask,
+            sliding_moves,
         }
     }
 
@@ -251,17 +249,17 @@ impl MoveGen {
     // Pawn moves may be added here in the future, still undecided.
     // This function is used for initial computation and then caching, should not be used in live search / movegen path.
     //
-    // Returns a MoveTakePair with 2 bitboards:
-    //    - moves: Bitboard of all the blank squares the piece can move to
-    //    - potential_takes: Bitboard of occupied squares that mark potential takes. Note that this includes squares with the current side occupying,
+    // Returns a PossibleMoves with 2 bitboards:
+    //    - take_exclusive: Bitboard of all the blank squares the piece can move to
+    //    - take_inclusive: Bitboard of both moves and potential takes. Note that this includes squares with the current side occupying,
     //                       so will need to & with enemy occupancy to confirm.
-    fn calculate_moves_from_square(square: Square, piece_kind: PieceKind, blocker_occupancy: Bitboard) -> MoveTakePair {
-        let directions = PIECE_DIRECTIONS[piece_kind];
+    fn calculate_moves_from_square(square: Square, piece_kind: IndexedPieceKind, blocker_occupancy: Bitboard) -> PossibleMoves {
+        let directions = indexed_piece_directions(piece_kind);
         let square_bb = square.bitboard();
         let mut moves = Bitboard::from(0);
         for d in directions {
             match piece_kind {
-                PieceKind::King | PieceKind::Knight => {
+                IndexedPieceKind::King | IndexedPieceKind::Knight => {
                     // For King and Knight, just make the move and add to moves
                     if (square_bb & d.impossible) != Bitboard::EMPTY { continue; }
                     if d.offset > 0 {
@@ -270,7 +268,7 @@ impl MoveGen {
                         moves |= square_bb >> -d.offset as u32;
                     }
                 },
-                PieceKind::Bishop | PieceKind::Rook => {
+                IndexedPieceKind::Bishop | IndexedPieceKind::Rook => {
                     // For Bishop and Rook, keep pushing in direction adding to moves as you go
                     // until you hit an impossible move (end of board) or another piece.
                     let mut curr = square_bb;
@@ -288,7 +286,7 @@ impl MoveGen {
             } 
         }
 
-        MoveTakePair { moves: moves & !blocker_occupancy, potential_takes: moves & blocker_occupancy }
+        PossibleMoves { final_exclusive: moves & !blocker_occupancy, final_inclusive: moves & blocker_occupancy }
     }
 
 }

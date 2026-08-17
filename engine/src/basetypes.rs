@@ -1,6 +1,7 @@
 //! Core value types shared across the engine (side, piece type, moves).
 
 use strum::{EnumCount, IntoEnumIterator};
+use subenum::subenum;
 
 use std::{str::FromStr};
 
@@ -31,14 +32,21 @@ impl Side {
     }
 }
 
+/// Piece kinds that move by sliding along a ray until blocked.
+/// Piece kinds whose moves are generated from precomputed, per-square lookup tables.
+#[subenum(SlidingPieceKind, IndexedPieceKind)]
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum PieceKind {
     Pawn,
+    #[subenum(IndexedPieceKind)]
     Knight,
+    #[subenum(SlidingPieceKind, IndexedPieceKind)]
     Bishop,
+    #[subenum(SlidingPieceKind, IndexedPieceKind)]
     Rook,
     Queen,
+    #[subenum(IndexedPieceKind)]
     King,
 }
 
@@ -367,6 +375,10 @@ impl Bitboard {
         Bitboard(bits)
     }
 
+    pub fn to(&self) -> u64 {
+        self.0
+    }
+
     pub const fn union(self, other: Bitboard) -> Bitboard {
         Bitboard(self.0 | other.0)
     }
@@ -379,6 +391,34 @@ impl Bitboard {
             1 => Some(unsafe { std::mem::transmute::<u8, Square>(self.0.trailing_zeros() as u8) }),
             _ => None
         }
+    }
+
+    // For the current bitboard, compress the bits covered in mask to the least significant bits,
+    // and then return as a usize
+    pub fn compressed_index(self, mask: u64) -> usize {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("bmi2") {
+                return unsafe { std::arch::x86_64::_pext_u64(self.0, mask) as usize };
+            }
+        }
+        Bitboard::compressed_index_fallback(self.0, mask)
+    }
+
+    // Portable software implementation of pext, used when BMI2 is unavailable.
+    // Note: written by AI as I really don't care about not my computer yet
+    fn compressed_index_fallback(bits: u64, mut mask: u64) -> usize {
+        let mut result = 0u64;
+        let mut next_bit = 1u64;
+        while mask != 0 {
+            let lsb = mask & mask.wrapping_neg();
+            if bits & lsb != 0 {
+                result |= next_bit;
+            }
+            next_bit <<= 1;
+            mask &= mask - 1;
+        }
+        result as usize
     }
 
     pub fn print(self, char: char) {
@@ -489,6 +529,90 @@ pub const BB_FILES: [Bitboard; 8] = {
 
 
 // Side and piece containers
+
+// Generic Enum Container
+// Potentialy replace PerPiece, PerSide etc with aliases to this
+pub trait EnumKey: Copy + strum::IntoEnumIterator {
+    const COUNT: usize;
+    type Array<T>: AsRef<[T]> + AsMut<[T]>;
+
+    fn index(self) -> usize;
+    fn from_index(i: usize) -> Self;
+    fn array_from_fn<T>(f: impl FnMut(Self) -> T) -> Self::Array<T>;
+}
+
+pub struct EnumMap<K: EnumKey, T>(K::Array<T>);
+
+impl<K: EnumKey, T> EnumMap<K, T> {
+    pub const fn from_array(values: K::Array<T>) -> Self {
+        Self(values)
+    }
+
+    pub fn from_fn(f: impl FnMut(K) -> T) -> Self {
+        Self(K::array_from_fn(f))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (K, &T)> {
+        K::iter().zip(self.0.as_ref().iter())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (K, &mut T)> {
+        K::iter().zip(self.0.as_mut().iter_mut())
+    }
+}
+
+impl<K: EnumKey, T: Copy> EnumMap<K, T> {
+    pub fn new(default_value: T) -> Self {
+        Self::from_fn(|_| default_value)
+    }
+}
+
+impl<K: EnumKey, T> std::ops::Index<K> for EnumMap<K, T> {
+    type Output = T;
+    fn index(&self, index: K) -> &T {
+        &self.0.as_ref()[index.index()]
+    }
+}
+
+impl<K: EnumKey, T> std::ops::IndexMut<K> for EnumMap<K, T> {
+    fn index_mut(&mut self, index: K) -> &mut T {
+        &mut self.0.as_mut()[index.index()]
+    }
+}
+
+impl EnumKey for IndexedPieceKind {
+    const COUNT: usize = <IndexedPieceKind as EnumCount>::COUNT;
+    type Array<T> = [T; <IndexedPieceKind as EnumCount>::COUNT];
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    fn from_index(i: usize) -> Self {
+        IndexedPieceKind::iter().nth(i).expect("index out of bounds for IndexedPieces")
+    }
+
+    fn array_from_fn<T>(mut f: impl FnMut(Self) -> T) -> Self::Array<T> {
+        std::array::from_fn(|i| f(Self::from_index(i)))
+    }
+}
+
+impl EnumKey for SlidingPieceKind {
+    const COUNT: usize = <IndexedPieceKind as EnumCount>::COUNT;
+    type Array<T> = [T; <IndexedPieceKind as EnumCount>::COUNT];
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    fn from_index(i: usize) -> Self {
+        SlidingPieceKind::iter().nth(i).expect("index out of bounds for SlidingPieces")
+    }
+
+    fn array_from_fn<T>(mut f: impl FnMut(Self) -> T) -> Self::Array<T> {
+        std::array::from_fn(|i| f(Self::from_index(i)))
+    }
+}
 
 // PerPiece
 #[derive(Debug, Clone, Copy)]
