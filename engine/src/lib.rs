@@ -13,6 +13,8 @@ pub mod search;
 
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
+
+use crate::movegen::MoveGen;
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -42,15 +44,19 @@ pub trait Engine {
 }
 
 /// The concrete apefish engine implementing [`Engine`].
+/// Make pub now for debugging purposes
 #[derive(Debug)]
 pub struct Apefish {
-    position: Position
+    position: Position,
+    movegen: MoveGen,
 }
 
-// Make pub now for debugging purposes
 impl Apefish {
     pub fn new() -> Self {
-        Apefish { position: Position::new() }
+        Apefish { 
+            position: Position::new(), 
+            movegen: MoveGen::init(),
+        }
     }
 
     pub fn print_debug_state(&self) {
@@ -72,7 +78,9 @@ impl Engine for Apefish {
     }
 
     fn legal_moves(&self) -> Vec<Move> {
-        unimplemented!()
+        let candidate_moves = self.movegen.pseudo_legal_moves(&self.position);
+        // TODO: Next step is to validate them as actually legal moves
+        candidate_moves
     }
 
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {

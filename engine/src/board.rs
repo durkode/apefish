@@ -191,7 +191,7 @@ impl Position {
         }
 
         // Update game state
-        self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !m.captured().is_none() {0} else {self.state.half_move_clock + 1};
+        self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !captured_piece.is_none() {0} else {self.state.half_move_clock + 1};
         self.state.full_move_number += 1;
         self.state.castling.remove_rights_for_move(self.state.active_side, m.from(), m.piece());
         self.state.en_passant = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {

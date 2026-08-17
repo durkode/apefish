@@ -9,59 +9,63 @@ use apefish_engine::{Apefish, Engine, InputMove, Square};
 fn main() {
     let mut af = Apefish::new();
     af.print_debug_state();
-    let moves: Vec<InputMove> = vec![
-        InputMove{
-            from: Square::G1,
-            to: Square::F3,
-            promotion: None
-        },
-        InputMove{
-            from: Square::D7,
-            to: Square::D5,
-            promotion: None
-        },
-        InputMove{
-            from:Square::A2,
-            to:Square::A3,
-            promotion: None
-        },
-        InputMove{
-            from: Square::D5,
-            to: Square::D4,
-            promotion: None
-        },
-        InputMove{
-            from: Square::E2,
-            to: Square::E4,
-            promotion: None
-        },
-        InputMove{
-            from: Square::D4,
-            to: Square::E3,
-            promotion: None
-        },
-        InputMove{
-            from: Square::F1,
-            to: Square::C4,
-            promotion: None
-        },
-        InputMove{
-            from: Square::H7,
-            to: Square::H6,
-            promotion: None
-        },
-        InputMove{
-            from: Square::E1,
-            to: Square::G1,
-            promotion: None
-        },
-    ];
-
-    for m in moves {
-        println!("Move: {m:?}");
-        af.make_move(m).unwrap();
-        af.print_board();
+    for m in af.legal_moves() {
+        println!("{m}");
     }
+
+    // let moves: Vec<InputMove> = vec![
+    //     InputMove{
+    //         from: Square::G1,
+    //         to: Square::F3,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::D7,
+    //         to: Square::D5,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from:Square::A2,
+    //         to:Square::A3,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::D5,
+    //         to: Square::D4,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::E2,
+    //         to: Square::E4,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::D4,
+    //         to: Square::E3,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::F1,
+    //         to: Square::C4,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::H7,
+    //         to: Square::H6,
+    //         promotion: None
+    //     },
+    //     InputMove{
+    //         from: Square::E1,
+    //         to: Square::G1,
+    //         promotion: None
+    //     },
+    // ];
+
+    // for m in moves {
+    //     println!("Move: {m:?}");
+    //     af.make_move(m).unwrap();
+    //     af.print_board();
+    // }
 
 }
 

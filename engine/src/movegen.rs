@@ -179,7 +179,8 @@ pub const BISHOP_BLOCKER_COMBINATIONS: u64 = 2u64.pow(9);
 pub const ROOK_BLOCKER_COMBINATIONS: u64 = 2u64.pow(12);
 
 // Holds the lookup tables
-struct MoveGen {
+#[derive(Debug)]
+pub struct MoveGen {
     // For a given indexed piece (Bishop, King, Knight, Rook), map from square to available moves on empty board
     move_mask: EnumMap<IndexedPieceKind, PerSquare<Bitboard>>,
     // For a given sliding piece, map from square to all the positions blockers can be that affect moves
@@ -195,7 +196,7 @@ impl MoveGen {
         let mut sliding_moves: EnumMap<SlidingPieceKind, PerSquare<Vec<Bitboard>>> = EnumMap::from_fn(|_| PerSquare::new(vec![]));
         // Initialise sliding move vectors to be the right size
         for (spk, x) in sliding_moves.iter_mut() {
-            for (square, v) in x.iter_mut() {
+            for (_, v) in x.iter_mut() {
                 let vec_length = match spk {
                     SlidingPieceKind::Bishop => BISHOP_BLOCKER_COMBINATIONS as usize,
                     SlidingPieceKind::Rook => ROOK_BLOCKER_COMBINATIONS as usize,
@@ -274,9 +275,9 @@ impl MoveGen {
                     let mut curr = square_bb;
                     while (curr & d.impossible) == Bitboard::EMPTY {
                         if d.offset > 0 {
-                            curr = square_bb << d.offset as u32;
+                            curr = curr << d.offset as u32;
                         } else {
-                            curr = square_bb >> -d.offset as u32;
+                            curr = curr >> -d.offset as u32;
                         }
                         moves |= curr;
                         if (curr & blocker_occupancy) != Bitboard::EMPTY { break; }
@@ -289,19 +290,47 @@ impl MoveGen {
         PossibleMoves { final_exclusive: moves & !blocker_occupancy, final_inclusive: moves & blocker_occupancy }
     }
 
+    // /// Moves following piece movement rules, without filtering for king safety.
+    pub fn pseudo_legal_moves(&self, pos: &Position) -> Vec<Move> {
+        let mut moves: Vec<Move> = vec![];
+        let active_side = pos.state.active_side;
+        let other_side = active_side.other();
+
+        for (pk, bb) in pos.pieces[active_side].iter() {
+            match pk {
+                PieceKind::Pawn => {}, // TODO
+                PieceKind::Knight | PieceKind::King => {
+                    let move_map = self.move_mask[IndexedPieceKind::try_from(pk).unwrap()];
+                    for s in bb.iter_squares() {
+                        let square_moves = move_map[s] & !pos.sides_pieces[active_side];
+                        for ts in square_moves.iter_squares() {
+                            moves.push(Move::new(
+                                s,
+                                ts,
+                                pk,
+                                None,
+                                false,
+                                false,
+                            ));
+                        }
+                    }
+                },
+                PieceKind::Bishop => {},
+                PieceKind::Rook => {},
+                PieceKind::Queen => {}
+            }
+        }
+
+        moves
+    }
+
+    pub fn is_attacked(pos: &Position, Square: Square) -> bool {
+        unimplemented!()
+    }
+
+    // /// The game's current status, derived from `legal_moves` and draw conditions.
+    // pub fn game_status(pos: &Position) -> GameStatus {
+    //     unimplemented!()
+    // }
+
 }
-
-
-// /// Moves following piece movement rules, without filtering for king safety.
-pub fn pseudo_legal_moves(pos: &Position) -> Vec<Move> {
-    unimplemented!()
-}
-
-pub fn is_attacked(pos: &Position, Square: Square) -> bool {
-    unimplemented!()
-}
-
-// /// The game's current status, derived from `legal_moves` and draw conditions.
-// pub fn game_status(pos: &Position) -> GameStatus {
-//     unimplemented!()
-// }

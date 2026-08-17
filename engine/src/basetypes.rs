@@ -3,7 +3,7 @@
 use strum::{EnumCount, IntoEnumIterator};
 use subenum::subenum;
 
-use std::{str::FromStr};
+use std::{fmt, str::FromStr};
 
 use crate::Position;
 
@@ -174,8 +174,7 @@ pub struct Move {
     // or a u16 (with minimal data like stockfish). For simplicity sake we will now just use a struct, but with plan to refactor later.
     from: Square,
     to: Square,
-    piece: PieceKind,
-    captured: Option<PieceKind>,
+    piece_kind: PieceKind,
     promotion: Option<PieceKind>,
     castling: bool,
     en_passant: bool,
@@ -183,17 +182,41 @@ pub struct Move {
 
 impl Move {
 
+    pub fn new(from: Square, to: Square, piece_kind: PieceKind, 
+               promotion: Option<PieceKind>, castling: bool, en_passant: bool) -> Move {
+        
+        Move { from, to, piece_kind, promotion, castling, en_passant }
+
+    }
+
     pub fn to_input_move(&self) -> InputMove {
         InputMove { from: self.from, to: self.to, promotion: self.promotion }
     }
 
     pub fn from(&self) -> Square {self.from}
     pub fn to(&self) -> Square {self.to}
-    pub fn piece(&self) -> PieceKind {self.piece}
-    pub fn captured(&self) -> Option<PieceKind> {self.captured}
+    pub fn piece(&self) -> PieceKind {self.piece_kind}
     pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
     pub fn castling(&self) -> bool {self.castling}
     pub fn en_passant(&self) -> bool {self.en_passant}
+}
+
+impl fmt::Display for Move {
+    /// UCI-style notation, e.g. "e2e4" or "e7e8q" for a promotion.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", format!("{:?}", self.from).to_lowercase(), format!("{:?}", self.to).to_lowercase())?;
+        if let Some(promotion) = self.promotion {
+            let promo_char = match promotion {
+                PieceKind::Queen => 'q',
+                PieceKind::Rook => 'r',
+                PieceKind::Bishop => 'b',
+                PieceKind::Knight => 'n',
+                PieceKind::Pawn | PieceKind::King => unreachable!("cannot promote to a pawn or king"),
+            };
+            write!(f, "{promo_char}")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -215,12 +238,7 @@ impl InputMove {
         Ok(Move {
             from: self.from,
             to: self.to,
-            piece: from_piece.kind,
-            captured: match pos.piece_by_square[self.to] {
-                Some(x) => Some(x.kind),
-                None if en_passant => Some(PieceKind::Pawn),
-                None => None
-            },
+            piece_kind: from_piece.kind,
             promotion: self.promotion,
             castling: match from_piece.kind {
                 PieceKind::King => self.from.file().as_num().abs_diff(self.to.file().as_num()) == 2,
@@ -421,6 +439,10 @@ impl Bitboard {
         result as usize
     }
 
+    pub fn iter_squares(self) -> SquaresIter {
+        SquaresIter(self.0)
+    }
+
     pub fn print(self, char: char) {
         for rank in Rank::iter() {
             for file in File::iter().rev() {
@@ -433,6 +455,30 @@ impl Bitboard {
         }
     }
 }
+
+pub struct SquaresIter(u64);
+
+impl Iterator for SquaresIter {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Square> {
+        if self.0 == 0 {
+            return None;
+        }
+        // Unsafe cast code relies on the fact that Square has complete mapping in range 0..=63
+        let sq = unsafe { std::mem::transmute::<u8, Square>(self.0.trailing_zeros() as u8) };
+        // Clear the lowest set bit
+        self.0 &= self.0 - 1;
+        Some(sq)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.0.count_ones() as usize;
+        (n, Some(n))
+    }
+}
+
+impl ExactSizeIterator for SquaresIter {}
 
 impl std::ops::BitAnd for Bitboard {
     type Output = Bitboard;
@@ -541,6 +587,7 @@ pub trait EnumKey: Copy + strum::IntoEnumIterator {
     fn array_from_fn<T>(f: impl FnMut(Self) -> T) -> Self::Array<T>;
 }
 
+#[derive(Debug)]
 pub struct EnumMap<K: EnumKey, T>(K::Array<T>);
 
 impl<K: EnumKey, T> EnumMap<K, T> {
