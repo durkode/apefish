@@ -45,9 +45,30 @@ pub(super) struct PieceMove {
     pub impossible: Bitboard
 }
 
-const PAWN_TAKES: PerSide<[PieceMove; 2]> = [
-    
-]
+const PAWN_TAKES: PerSide<[PieceMove; 2]> = PerSide::from_array([
+    // White
+    [
+        PieceMove {
+            offset: SquareOffset::NORTH_WEST,
+            impossible: BB_RANKS[Rank::R8.as_num()].union(BB_FILES[File::A.as_num()])
+        },
+        PieceMove {
+            offset: SquareOffset::NORTH_EAST,
+            impossible: BB_RANKS[Rank::R8.as_num()].union(BB_FILES[File::H.as_num()])
+        },
+    ],
+    // Black
+    [
+        PieceMove {
+            offset: SquareOffset::SOUTH_WEST,
+            impossible: BB_RANKS[Rank::R1.as_num()].union(BB_FILES[File::A.as_num()])
+        },
+        PieceMove {
+            offset: SquareOffset::SOUTH_EAST,
+            impossible: BB_RANKS[Rank::R1.as_num()].union(BB_FILES[File::H.as_num()])
+        },
+    ],
+]);
 
 const KING_MOVES: [PieceMove; 8] = [
     PieceMove {
@@ -321,13 +342,10 @@ impl MoveGen {
         let all_blockers = pos.sides_pieces[active_side] | pos.sides_pieces[other_side];
         match pk {
             PieceKind::Pawn => {
+                // TODO: For now just calculate pawns by hand. Possible we can speed this up with pre-calculated
                 let forward_direction_offset = match active_side {
                     Side::White => SquareOffset::NORTH,
                     Side::Black => SquareOffset::SOUTH,    
-                };
-                let take_offsets = match active_side{
-                    Side::White => &[SquareOffset::NORTH_EAST, SquareOffset::NORTH_WEST],
-                    Side::Black => &[SquareOffset::SOUTH_EAST, SquareOffset::SOUTH_WEST],
                 };
                 // Push pawn forward if nothing in the way
                 let forward_push = from_square.bitboard().shift_offset(forward_direction_offset);
@@ -342,6 +360,18 @@ impl MoveGen {
                     }
                 }
                 // Check taking diagonally
+                for piece_move in &PAWN_TAKES[active_side] {
+                    if from_square.bitboard() & piece_move.impossible == Bitboard::EMPTY { 
+                        continue; 
+                    }
+                    let dest_bb = from_square.bitboard().shift_offset(piece_move.offset);
+                    if dest_bb & pos.sides_pieces[other_side] != Bitboard::EMPTY {
+                        self.add_pawn_move(from_square, dest_bb.single_square().unwrap(), active_side, false, moves);
+                    } else if dest_bb.single_square() == pos.state.en_passant {
+                        self.add_pawn_move(from_square, pos.state.en_passant.unwrap(), active_side, true, moves);
+                    }
+                }
+
             },
             PieceKind::King | PieceKind::Knight => {
                 let move_map = self.raw_move[IndexedPieceKind::try_from(pk).unwrap()];

@@ -10,26 +10,26 @@ fn main() {
     let mut af = Apefish::new();
 
     let moves: Vec<InputMove> = vec![
-        InputMove{
-            from: Square::E2,
-            to: Square::E3,
-            promotion: None
-        },
-        InputMove{
-            from: Square::D7,
-            to: Square::D6,
-            promotion: None
-        },
-        InputMove{
-            from: Square::D2,
-            to: Square::D3,
-            promotion: None
-        },
-        InputMove{
-            from: Square::E7,
-            to: Square::E6,
-            promotion: None
-        },
+        // InputMove{
+        //     from: Square::E2,
+        //     to: Square::E3,
+        //     promotion: None
+        // },
+        // InputMove{
+        //     from: Square::D7,
+        //     to: Square::D6,
+        //     promotion: None
+        // },
+        // InputMove{
+        //     from: Square::D2,
+        //     to: Square::D3,
+        //     promotion: None
+        // },
+        // InputMove{
+        //     from: Square::E7,
+        //     to: Square::E6,
+        //     promotion: None
+        // },
         // InputMove{
         //     from:Square::A2,
         //     to:Square::A3,

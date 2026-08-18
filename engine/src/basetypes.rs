@@ -718,6 +718,12 @@ impl<T> std::ops::IndexMut<PieceKind> for PerPiece<T> {
 #[derive(Debug, Clone, Copy)]
 pub struct PerSide<T>([T; Side::COUNT]);
 
+impl<T> PerSide<T> {
+    pub const fn from_array(values: [T; Side::COUNT]) -> Self {
+        Self(values)
+    }
+}
+
 impl<T> PerSide<T>
 where
     T: Copy
