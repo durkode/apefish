@@ -2,6 +2,7 @@
 
 use strum::{IntoEnumIterator};
 
+use crate::Side;
 use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumKey, EnumMap, File, IndexedPieceKind, PieceKind, SlidingPieceKind, Move, PerSquare, Rank, Square};
 use crate::board::Position;
 
@@ -172,7 +173,7 @@ pub const ROOK_BLOCKER_COMBINATIONS: u64 = 2u64.pow(12);
 #[derive(Debug)]
 pub struct MoveGen {
     // For a given indexed piece (Bishop, King, Knight, Rook), map from square to available moves on empty board
-    move_mask: EnumMap<IndexedPieceKind, PerSquare<Bitboard>>,
+    raw_move: EnumMap<IndexedPieceKind, PerSquare<Bitboard>>,
     // For a given sliding piece, map from square to all the positions blockers can be that affect moves
     blocker_mask: EnumMap<SlidingPieceKind, PerSquare<Bitboard>>,
     // For a given sliding piece and square, hold a vector of available moves indexed by blocker hash.
@@ -181,7 +182,7 @@ pub struct MoveGen {
 
 impl MoveGen {
     pub fn init() -> Self {
-        let mut move_mask: EnumMap<IndexedPieceKind, PerSquare<Bitboard>> = EnumMap::new(PerSquare::new(Bitboard::from(0)));
+        let mut raw_move: EnumMap<IndexedPieceKind, PerSquare<Bitboard>> = EnumMap::new(PerSquare::new(Bitboard::from(0)));
         let mut blocker_mask: EnumMap<SlidingPieceKind, PerSquare<Bitboard>> = EnumMap::new(PerSquare::new(Bitboard::from(0)));
         let mut sliding_moves: EnumMap<SlidingPieceKind, PerSquare<Vec<Bitboard>>> = EnumMap::from_fn(|_| PerSquare::new(vec![]));
         // Initialise sliding move vectors to be the right size
@@ -201,7 +202,7 @@ impl MoveGen {
         for ipk in IndexedPieceKind::iter() {
             for s in Square::iter() {
                 let moves = MoveGen::calculate_moves_from_square(s, ipk.into(), Bitboard::from(0));
-                move_mask[ipk][s] = moves;
+                raw_move[ipk][s] = moves;
                 if let Ok(spk) = SlidingPieceKind::try_from(PieceKind::from(ipk)) {
                     blocker_mask[spk][s] = moves & !edge_of_board;
                 }
@@ -234,9 +235,8 @@ impl MoveGen {
             }
         }
 
-
         Self {
-            move_mask,
+            raw_move,
             blocker_mask,
             sliding_moves,
         }
@@ -285,35 +285,67 @@ impl MoveGen {
     // /// Moves following piece movement rules, without filtering for king safety.
     pub fn pseudo_legal_moves(&self, pos: &Position) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
-        let active_side = pos.state.active_side;
-        let other_side = active_side.other();
+        
 
-        for (pk, bb) in pos.pieces[active_side].iter() {
-            match pk {
-                PieceKind::Pawn => {}, // TODO
-                PieceKind::Knight | PieceKind::King => {
-                    let move_map = self.move_mask[IndexedPieceKind::try_from(pk).unwrap()];
-                    for s in bb.iter_squares() {
-                        let square_moves = move_map[s] & !pos.sides_pieces[active_side];
-                        for ts in square_moves.iter_squares() {
-                            moves.push(Move::new(
-                                s,
-                                ts,
-                                pk,
-                                None,
-                                false,
-                                false,
-                            ));
-                        }
+        for pk in PieceKind::iter() {
+            for from_square in pos.pieces[pos.state.active_side][pk].iter_squares() {
+                match pk {
+                    PieceKind::Pawn => {}, // TODO
+                    PieceKind::Knight | PieceKind::King | PieceKind::Bishop | PieceKind::Rook => {
+                        self.append_piece_moves(&mut moves, pos, pk, from_square);
+                    },
+                    PieceKind::Queen => {
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Queen, from_square);
                     }
-                },
-                PieceKind::Bishop => {},
-                PieceKind::Rook => {},
-                PieceKind::Queen => {}
+                }
             }
         }
 
         moves
+    }
+
+    fn append_piece_moves(&self, moves: &mut Vec<Move>, pos: &Position, pk: PieceKind, from_square: Square) {
+        let active_side = pos.state.active_side;
+        let other_side = active_side.other();
+        let all_blockers = pos.sides_pieces[active_side] | pos.sides_pieces[other_side];
+        match pk {
+            PieceKind::King | PieceKind::Knight => {
+                let move_map = self.raw_move[IndexedPieceKind::try_from(pk).unwrap()];
+                for s in pos.pieces[active_side][pk].iter_squares() {
+                    let square_moves = move_map[s] & !pos.sides_pieces[active_side];
+                    for ts in square_moves.iter_squares() {
+                        moves.push(Move::new(
+                            s,
+                            ts,
+                            pk,
+                            None,
+                            false,
+                            false,
+                        ));
+                    }
+                }
+            },
+            PieceKind::Pawn => {} // TODO
+            PieceKind::Bishop | PieceKind::Rook => {
+                let spk = SlidingPieceKind::try_from(pk).unwrap();
+                let blocker_mask = self.blocker_mask[spk][from_square];
+                let blockers = blocker_mask & all_blockers;
+                let square_moves = self.sliding_moves[spk][from_square][blockers.compressed_index(blocker_mask.to())] & !pos.sides_pieces[active_side];
+                for ts in square_moves.iter_squares() {
+                    moves.push(Move::new(
+                        from_square,
+                        ts,
+                        pk,
+                        None,
+                        false,
+                        false
+                    ))
+                }
+            }
+            PieceKind::Queen => { panic!("Should never call append_piece_moves with Queen")}
+
+        }
     }
 
     pub fn is_attacked(pos: &Position, Square: Square) -> bool {
