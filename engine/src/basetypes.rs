@@ -645,8 +645,8 @@ impl EnumKey for IndexedPieceKind {
 }
 
 impl EnumKey for SlidingPieceKind {
-    const COUNT: usize = <IndexedPieceKind as EnumCount>::COUNT;
-    type Array<T> = [T; <IndexedPieceKind as EnumCount>::COUNT];
+    const COUNT: usize = <SlidingPieceKind as EnumCount>::COUNT;
+    type Array<T> = [T; <SlidingPieceKind as EnumCount>::COUNT];
 
     fn index(self) -> usize {
         self as usize

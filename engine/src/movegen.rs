@@ -165,16 +165,6 @@ pub(super) const fn indexed_piece_directions(piece: IndexedPieceKind) -> &'stati
     }
 }
 
-
-// A pair of bitboards showing where a piece can move
-// - final_exclusive: Possible moves excluding the final square (edge of board, occupied square)
-// - final_inclusive: Possible moves including the final square.
-#[derive(Clone, Copy, Debug)]
-pub struct PossibleMoves {
-    pub final_exclusive: Bitboard,
-    pub final_inclusive: Bitboard
-}
-
 pub const BISHOP_BLOCKER_COMBINATIONS: u64 = 2u64.pow(9);
 pub const ROOK_BLOCKER_COMBINATIONS: u64 = 2u64.pow(12);
 
@@ -206,12 +196,14 @@ impl MoveGen {
         }
 
         // Generate move and blocker masks
+        let edge_of_board = BB_RANKS[Rank::R1.as_num()] | BB_RANKS[Rank::R8.as_num()]  | BB_FILES[File::A.as_num()] | BB_FILES[File::H.as_num()];
+        edge_of_board.print('1');
         for ipk in IndexedPieceKind::iter() {
             for s in Square::iter() {
                 let moves = MoveGen::calculate_moves_from_square(s, ipk.into(), Bitboard::from(0));
-                move_mask[ipk][s] = moves.final_inclusive;
+                move_mask[ipk][s] = moves;
                 if let Ok(spk) = SlidingPieceKind::try_from(PieceKind::from(ipk)) {
-                    blocker_mask[spk][s] = moves.final_exclusive;
+                    blocker_mask[spk][s] = moves & !edge_of_board;
                 }
             }
         }
@@ -229,7 +221,12 @@ impl MoveGen {
                     blocker = blocker.wrapping_sub(blocker_mask) & blocker_mask;
                     let bb = Bitboard::from(blocker);
                     let moves = MoveGen::calculate_moves_from_square(s, ipk, bb);
-                    sliding_moves[spk][s][bb.compressed_index(blocker_mask)] = moves.final_inclusive;
+                    
+                    // println!("Square {s:?}");
+                    // let blocker_mask_bb = Bitboard::from(blocker_mask);
+                    // blocker_mask_bb.print('1');
+
+                    sliding_moves[spk][s][bb.compressed_index(blocker_mask)] = moves;
                     if blocker == 0 {
                         break;
                     }
@@ -249,12 +246,7 @@ impl MoveGen {
     // Does not calculate a) pawn moves or b) castling.
     // Pawn moves may be added here in the future, still undecided.
     // This function is used for initial computation and then caching, should not be used in live search / movegen path.
-    //
-    // Returns a PossibleMoves with 2 bitboards:
-    //    - take_exclusive: Bitboard of all the blank squares the piece can move to
-    //    - take_inclusive: Bitboard of both moves and potential takes. Note that this includes squares with the current side occupying,
-    //                       so will need to & with enemy occupancy to confirm.
-    fn calculate_moves_from_square(square: Square, piece_kind: IndexedPieceKind, blocker_occupancy: Bitboard) -> PossibleMoves {
+    fn calculate_moves_from_square(square: Square, piece_kind: IndexedPieceKind, blocker_occupancy: Bitboard) -> Bitboard {
         let directions = indexed_piece_directions(piece_kind);
         let square_bb = square.bitboard();
         let mut moves = Bitboard::from(0);
@@ -287,7 +279,7 @@ impl MoveGen {
             } 
         }
 
-        PossibleMoves { final_exclusive: moves & !blocker_occupancy, final_inclusive: moves & blocker_occupancy }
+        moves
     }
 
     // /// Moves following piece movement rules, without filtering for king safety.
