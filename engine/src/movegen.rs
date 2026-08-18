@@ -3,7 +3,7 @@
 use strum::{IntoEnumIterator};
 
 use crate::Side;
-use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumKey, EnumMap, File, IndexedPieceKind, PieceKind, SlidingPieceKind, Move, PerSquare, Rank, Square};
+use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumKey, EnumMap, File, IndexedPieceKind, Move, PerSide, PerSquare, PieceKind, Rank, SlidingPieceKind, Square};
 use crate::board::Position;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +45,9 @@ pub(super) struct PieceMove {
     pub impossible: Bitboard
 }
 
-// 
+const PAWN_TAKES: PerSide<[PieceMove; 2]> = [
+    
+]
 
 const KING_MOVES: [PieceMove; 8] = [
     PieceMove {
@@ -299,14 +301,13 @@ impl MoveGen {
         for pk in PieceKind::iter() {
             for from_square in pos.pieces[pos.state.active_side][pk].iter_squares() {
                 match pk {
-                    PieceKind::Pawn => {}, // TODO
-                    PieceKind::Knight | PieceKind::King | PieceKind::Bishop | PieceKind::Rook => {
-                        self.append_piece_moves(&mut moves, pos, pk, from_square);
-                    },
                     PieceKind::Queen => {
                         self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, from_square);
                         self.append_piece_moves(&mut moves, pos, PieceKind::Rook, from_square);
-                    }
+                    },
+                    _ => {
+                        self.append_piece_moves(&mut moves, pos, pk, from_square);
+                    },
                 }
             }
         }
@@ -319,6 +320,29 @@ impl MoveGen {
         let other_side = active_side.other();
         let all_blockers = pos.sides_pieces[active_side] | pos.sides_pieces[other_side];
         match pk {
+            PieceKind::Pawn => {
+                let forward_direction_offset = match active_side {
+                    Side::White => SquareOffset::NORTH,
+                    Side::Black => SquareOffset::SOUTH,    
+                };
+                let take_offsets = match active_side{
+                    Side::White => &[SquareOffset::NORTH_EAST, SquareOffset::NORTH_WEST],
+                    Side::Black => &[SquareOffset::SOUTH_EAST, SquareOffset::SOUTH_WEST],
+                };
+                // Push pawn forward if nothing in the way
+                let forward_push = from_square.bitboard().shift_offset(forward_direction_offset);
+                if all_blockers & forward_push == Bitboard::EMPTY {
+                    self.add_pawn_move(from_square, forward_push.single_square().unwrap(), active_side, false, moves);
+                    // Now check if double push is possible
+                    if (active_side == Side::White && from_square.rank() == Rank::R2) || (active_side == Side::Black && from_square.rank() == Rank::R7) {
+                        let double_forward_push = forward_push.shift_offset(forward_direction_offset);
+                        if all_blockers & double_forward_push == Bitboard::EMPTY {
+                            self.add_pawn_move(from_square, double_forward_push.single_square().unwrap(), active_side, false, moves);
+                        }
+                    }
+                }
+                // Check taking diagonally
+            },
             PieceKind::King | PieceKind::Knight => {
                 let move_map = self.raw_move[IndexedPieceKind::try_from(pk).unwrap()];
                 let square_moves = move_map[from_square] & !pos.sides_pieces[active_side];
@@ -333,7 +357,6 @@ impl MoveGen {
                     ));
                 }
             },
-            PieceKind::Pawn => {} // TODO
             PieceKind::Bishop | PieceKind::Rook => {
                 let spk = SlidingPieceKind::try_from(pk).unwrap();
                 let blocker_mask = self.blocker_mask[spk][from_square];
@@ -352,6 +375,18 @@ impl MoveGen {
             }
             PieceKind::Queen => { panic!("Should never call append_piece_moves with Queen")}
 
+        }
+    }
+
+    fn add_pawn_move(&self, from: Square, to: Square, active_side: Side, en_passant: bool, moves: &mut Vec<Move>) {
+        let promotion_options: &[Option<PieceKind>] = match (active_side, to.rank()) {
+            (Side::White, Rank::R8) | (Side::Black, Rank::R1) => {
+                &[Some(PieceKind::Bishop), Some(PieceKind::Knight), Some(PieceKind::Rook), Some(PieceKind::Queen)]
+            },
+            _ => { &[None]},
+        };
+        for po in promotion_options {
+            moves.push(Move::new(from, to, PieceKind::Pawn, *po, false, en_passant));
         }
     }
 

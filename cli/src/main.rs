@@ -20,6 +20,16 @@ fn main() {
             to: Square::D6,
             promotion: None
         },
+        InputMove{
+            from: Square::D2,
+            to: Square::D3,
+            promotion: None
+        },
+        InputMove{
+            from: Square::E7,
+            to: Square::E6,
+            promotion: None
+        },
         // InputMove{
         //     from:Square::A2,
         //     to:Square::A3,
