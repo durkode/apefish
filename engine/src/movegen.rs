@@ -296,7 +296,7 @@ impl MoveGen {
                     },
                     PieceKind::Queen => {
                         self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, from_square);
-                        self.append_piece_moves(&mut moves, pos, PieceKind::Queen, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Rook, from_square);
                     }
                 }
             }
