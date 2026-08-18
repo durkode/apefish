@@ -119,12 +119,6 @@ impl Square {
         unsafe { std::mem::transmute::<u8, File>((self as u8) % 8) }
     }
 
-    pub fn shift(self, offset: i8) -> Self {
-        match offset > 0 {
-            true => {}
-        }
-    }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]

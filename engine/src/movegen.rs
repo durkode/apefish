@@ -50,22 +50,22 @@ const PAWN_TAKES: PerSide<[PieceMove; 2]> = PerSide::from_array([
     [
         PieceMove {
             offset: SquareOffset::NORTH_WEST,
-            impossible: BB_RANKS[Rank::R8.as_num()].union(BB_FILES[File::A.as_num()])
+            impossible: BB_FILES[File::A.as_num()]
         },
         PieceMove {
             offset: SquareOffset::NORTH_EAST,
-            impossible: BB_RANKS[Rank::R8.as_num()].union(BB_FILES[File::H.as_num()])
+            impossible: BB_FILES[File::H.as_num()]
         },
     ],
     // Black
     [
         PieceMove {
             offset: SquareOffset::SOUTH_WEST,
-            impossible: BB_RANKS[Rank::R1.as_num()].union(BB_FILES[File::A.as_num()])
+            impossible: BB_FILES[File::A.as_num()]
         },
         PieceMove {
             offset: SquareOffset::SOUTH_EAST,
-            impossible: BB_RANKS[Rank::R1.as_num()].union(BB_FILES[File::H.as_num()])
+            impossible: BB_FILES[File::H.as_num()]
         },
     ],
 ]);
@@ -361,7 +361,7 @@ impl MoveGen {
                 }
                 // Check taking diagonally
                 for piece_move in &PAWN_TAKES[active_side] {
-                    if from_square.bitboard() & piece_move.impossible == Bitboard::EMPTY { 
+                    if from_square.bitboard() & !piece_move.impossible == Bitboard::EMPTY { 
                         continue; 
                     }
                     let dest_bb = from_square.bitboard().shift_offset(piece_move.offset);
