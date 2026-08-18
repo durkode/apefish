@@ -198,13 +198,24 @@ impl MoveGen {
 
         // Generate move and blocker masks
         let edge_of_board = BB_RANKS[Rank::R1.as_num()] | BB_RANKS[Rank::R8.as_num()]  | BB_FILES[File::A.as_num()] | BB_FILES[File::H.as_num()];
-        edge_of_board.print('1');
+        let corners = Square::A1.bitboard() | Square::A8.bitboard() | Square::H1.bitboard() | Square::H8.bitboard();
         for ipk in IndexedPieceKind::iter() {
             for s in Square::iter() {
                 let moves = MoveGen::calculate_moves_from_square(s, ipk.into(), Bitboard::from(0));
                 raw_move[ipk][s] = moves;
                 if let Ok(spk) = SlidingPieceKind::try_from(PieceKind::from(ipk)) {
-                    blocker_mask[spk][s] = moves & !edge_of_board;
+                    let side_squares = match s.rank() {
+                        r@ Rank::R1| r@ Rank::R8 => BB_RANKS[r.as_num()],
+                        _ => Bitboard::from(0)
+                    } | match s.file() {
+                        f@ File::A| f@ File::H => BB_FILES[f.as_num()],
+                        _ => Bitboard::from(0)
+                    };
+                    // blocker mask for rook is moves - edge of board + edge of board square is on - corners (cumulates in that order)
+                    blocker_mask[spk][s] = match spk {
+                        SlidingPieceKind::Rook => ((moves & !edge_of_board) | side_squares) & !corners,
+                        SlidingPieceKind::Bishop => moves & !edge_of_board
+                    }
                 }
             }
         }
@@ -223,9 +234,7 @@ impl MoveGen {
                     let bb = Bitboard::from(blocker);
                     let moves = MoveGen::calculate_moves_from_square(s, ipk, bb);
                     
-                    // println!("Square {s:?}");
-                    // let blocker_mask_bb = Bitboard::from(blocker_mask);
-                    // blocker_mask_bb.print('1');
+                    let blocker_mask_bb = Bitboard::from(blocker_mask);
 
                     sliding_moves[spk][s][bb.compressed_index(blocker_mask)] = moves;
                     if blocker == 0 {
@@ -312,18 +321,16 @@ impl MoveGen {
         match pk {
             PieceKind::King | PieceKind::Knight => {
                 let move_map = self.raw_move[IndexedPieceKind::try_from(pk).unwrap()];
-                for s in pos.pieces[active_side][pk].iter_squares() {
-                    let square_moves = move_map[s] & !pos.sides_pieces[active_side];
-                    for ts in square_moves.iter_squares() {
-                        moves.push(Move::new(
-                            s,
-                            ts,
-                            pk,
-                            None,
-                            false,
-                            false,
-                        ));
-                    }
+                let square_moves = move_map[from_square] & !pos.sides_pieces[active_side];
+                for ts in square_moves.iter_squares() {
+                    moves.push(Move::new(
+                        from_square,
+                        ts,
+                        pk,
+                        None,
+                        false,
+                        false,
+                    ));
                 }
             },
             PieceKind::Pawn => {} // TODO
