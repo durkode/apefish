@@ -100,8 +100,18 @@ impl Position {
     pub fn fen_setup(&mut self, fen_str: &str) -> Result<(), fen::FenError>{
         let fen_struct = fen::parse_fen(fen_str)?;
         self.piece_by_square = fen_struct.pieces;
-        // TODO: Initialise the rest of the position from the fen parts
         self.initialise_bitboards_from_piece_list();
+
+        self.state = PositionState { 
+            active_side: fen_struct.active_colour, 
+            castling: fen_struct.castling_rights, 
+            half_move_clock: fen_struct.half_move_clock, 
+            full_move_number: fen_struct.full_move_number, 
+            en_passant: fen_struct.en_passant_square, 
+            next_move: None 
+        };
+        self.history = PositionHistory::new();
+
         Ok(())
     }
 

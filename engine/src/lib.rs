@@ -70,11 +70,16 @@ impl Apefish {
 
 impl Engine for Apefish {
     fn new_game(&mut self) {
-        unimplemented!()
+        self.position = Position::new();
     }
 
-    fn set_position(&mut self, _fen: Option<&str>, _moves: &[Move]) {
-        unimplemented!()
+    fn set_position(&mut self, fen: Option<&str>, moves: &[Move]) {
+        if let Some(fen_string) = fen {
+            self.position.fen_setup(fen_string).unwrap();
+        }
+        for m in moves {
+            self.position.make_move(*m).unwrap();
+        }
     }
 
     fn legal_moves(&self) -> Vec<Move> {

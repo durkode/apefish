@@ -35,7 +35,7 @@ pub fn parse_fen(fen: &str) -> Result<FenParts, FenError>  {
         return Err(FenError::IncorrectPartLength)
     }
 
-    println!("Fen parts {fen_parts:?}");
+    // println!("Fen parts {fen_parts:?}");
 
     let result = FenParts{
         pieces: fen_parse_pieces(fen_parts[0])?,
