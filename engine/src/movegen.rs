@@ -3,7 +3,7 @@
 use strum::{IntoEnumIterator};
 
 use crate::Side;
-use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumKey, EnumMap, File, IndexedPieceKind, Move, PerSide, PerSquare, PieceKind, Rank, SlidingPieceKind, Square};
+use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumMap, File, IndexedPieceKind, Move, PerSide, PerSquare, PieceKind, Rank, SlidingPieceKind, Square};
 use crate::board::Position;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,8 +257,6 @@ impl MoveGen {
                     let bb = Bitboard::from(blocker);
                     let moves = MoveGen::calculate_moves_from_square(s, ipk, bb);
                     
-                    let blocker_mask_bb = Bitboard::from(blocker_mask);
-
                     sliding_moves[spk][s][bb.compressed_index(blocker_mask)] = moves;
                     if blocker == 0 {
                         break;
@@ -307,7 +305,6 @@ impl MoveGen {
                         if (curr & blocker_occupancy) != Bitboard::EMPTY { break; }
                     }
                 },
-                _ => { panic!("Invalid piece in calculate_moves_from_square()")}
             } 
         }
 
@@ -420,7 +417,7 @@ impl MoveGen {
         }
     }
 
-    pub fn is_attacked(pos: &Position, Square: Square) -> bool {
+    pub fn is_attacked(_pos: &Position, _square: Square) -> bool {
         unimplemented!()
     }
 
