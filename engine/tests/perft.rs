@@ -29,37 +29,34 @@
 //! incremental perft (each node replays the whole path from the root), which
 //! is why the deepest/largest cases below are marked `#[ignore]`; run them
 //! with `cargo test -- --ignored` for a thorough (slow) pass.
+//!
+//! ## Debugging a failure
+//!
+//! On a node-count mismatch, `assert_perft` auto-bisects against a local
+//! Stockfish binary (`common::bisect_mismatch`) before failing, descending
+//! ply by ply into the first diverging branch until it isolates the exact
+//! node and move that disagrees. That trace is printed as part of the
+//! failing test's output - `cargo test` alone is enough, no need to
+//! separately copy the FEN into another tool. Requires `stockfish` on PATH
+//! (or `STOCKFISH_BIN=/path/to/it`); if it's not found, bisection is
+//! skipped with a note instead of failing the run.
 
-use apefish_engine::{Apefish, Engine, Move};
+use apefish_engine::Apefish;
 
-/// Count leaf nodes of the legal move tree `depth` plies deep, using only
-/// `Engine::set_position` and `Engine::legal_moves`.
-fn perft<E: Engine>(engine: &mut E, fen: &str, depth: u32) -> u64 {
-    fn go<E: Engine>(engine: &mut E, fen: &str, moves: &mut Vec<Move>, depth: u32) -> u64 {
-        if depth == 0 {
-            return 1;
-        }
-        engine.set_position(Some(fen), moves.as_slice());
-        let legal = engine.legal_moves();
-        if depth == 1 {
-            // Bulk-count: every legal move here is one leaf node, no need to
-            // recurse one more level just to count 1 per move.
-            return legal.len() as u64;
-        }
-        let mut nodes = 0;
-        for mv in legal {
-            moves.push(mv);
-            nodes += go(engine, fen, moves, depth - 1);
-            moves.pop();
-        }
-        nodes
-    }
-    go(engine, fen, &mut Vec::new(), depth)
-}
+mod common;
+use common::perft;
 
+/// On a mismatch, auto-bisects against Stockfish (if installed - see
+/// `common::bisect_mismatch`) before asserting, so the failing test's
+/// captured output already contains the exact node/move that diverges
+/// instead of just the top-level node count.
 fn assert_perft(fen: &str, depth: u32, expected: u64) {
     let mut engine = Apefish::new();
     let actual = perft(&mut engine, fen, depth);
+    if actual != expected {
+        println!("perft mismatch - auto-bisecting against stockfish to find the exact divergence:\n");
+        common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
+    }
     assert_eq!(
         actual, expected,
         "perft({depth}) mismatch for fen `{fen}`: expected {expected}, got {actual}"

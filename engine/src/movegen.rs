@@ -346,12 +346,12 @@ impl MoveGen {
                 // Push pawn forward if nothing in the way
                 let forward_push = from_square.bitboard().shift_offset(forward_direction_offset);
                 if all_blockers & forward_push == Bitboard::EMPTY {
-                    self.add_pawn_move(from_square, forward_push.single_square().unwrap(), active_side, false, moves);
+                    self.add_pawn_move(from_square, forward_push.single_square().unwrap(), active_side, None, false, moves);
                     // Now check if double push is possible
                     if (active_side == Side::White && from_square.rank() == Rank::R2) || (active_side == Side::Black && from_square.rank() == Rank::R7) {
                         let double_forward_push = forward_push.shift_offset(forward_direction_offset);
                         if all_blockers & double_forward_push == Bitboard::EMPTY {
-                            self.add_pawn_move(from_square, double_forward_push.single_square().unwrap(), active_side, false, moves);
+                            self.add_pawn_move(from_square, double_forward_push.single_square().unwrap(), active_side, None, false, moves);
                         }
                     }
                 }
@@ -362,9 +362,11 @@ impl MoveGen {
                     }
                     let dest_bb = from_square.bitboard().shift_offset(piece_move.offset);
                     if dest_bb & pos.sides_pieces[other_side] != Bitboard::EMPTY {
-                        self.add_pawn_move(from_square, dest_bb.single_square().unwrap(), active_side, false, moves);
+                        let to_square = dest_bb.single_square().unwrap();
+                        let captured = pos.piece_by_square[to_square].map(|x| x.kind);
+                        self.add_pawn_move(from_square, to_square, active_side, captured, false, moves);
                     } else if dest_bb.single_square() == pos.state.en_passant {
-                        self.add_pawn_move(from_square, pos.state.en_passant.unwrap(), active_side, true, moves);
+                        self.add_pawn_move(from_square, pos.state.en_passant.unwrap(), active_side, Some(PieceKind::Pawn), true, moves);
                     }
                 }
 
@@ -378,6 +380,7 @@ impl MoveGen {
                         ts,
                         pk,
                         None,
+                        pos.piece_by_square[ts].map(|x| x.kind),
                         false,
                         false,
                     ));
@@ -394,6 +397,7 @@ impl MoveGen {
                         ts,
                         pk,
                         None,
+                        pos.piece_by_square[ts].map(|x| x.kind),
                         false,
                         false
                     ))
@@ -409,12 +413,14 @@ impl MoveGen {
             for direction in CastlingDirection::for_side(active_side).iter().filter(|x| pos.state.castling.has_rights(**x)) {
                 let king_in_position = pos.pieces[active_side][PieceKind::King] & direction.king_from().bitboard() != Bitboard::EMPTY;
                 let rook_in_position = pos.pieces[active_side][PieceKind::Rook] & direction.rook_from().bitboard() != Bitboard::EMPTY;
-                let empty_squares_in_position = direction.empty_squares().iter().map(|s| s.bitboard()).reduce(|a, b| a | b).unwrap() & !(pos.sides_pieces[active_side] | pos.sides_pieces[other_side]) != Bitboard::EMPTY; 
+                let empty_squares_bb = direction.empty_squares().iter().map(|s| s.bitboard()).reduce(|a, b| a | b).unwrap();
+                let empty_squares_in_position = empty_squares_bb & (pos.sides_pieces[active_side] | pos.sides_pieces[other_side]) == Bitboard::EMPTY; 
                 if king_in_position && rook_in_position && empty_squares_in_position {
                     moves.push(Move::new(
                         direction.king_from(),
                         direction.king_to(),
                         PieceKind::King,
+                        None,
                         None,
                         true,
                         false
@@ -424,7 +430,7 @@ impl MoveGen {
         }
     }
 
-    fn add_pawn_move(&self, from: Square, to: Square, active_side: Side, en_passant: bool, moves: &mut Vec<Move>) {
+    fn add_pawn_move(&self, from: Square, to: Square, active_side: Side, captured: Option<PieceKind>, en_passant: bool, moves: &mut Vec<Move>) {
         let promotion_options: &[Option<PieceKind>] = match (active_side, to.rank()) {
             (Side::White, Rank::R8) | (Side::Black, Rank::R1) => {
                 &[Some(PieceKind::Bishop), Some(PieceKind::Knight), Some(PieceKind::Rook), Some(PieceKind::Queen)]
@@ -432,7 +438,7 @@ impl MoveGen {
             _ => { &[None]},
         };
         for po in promotion_options {
-            moves.push(Move::new(from, to, PieceKind::Pawn, *po, false, en_passant));
+            moves.push(Move::new(from, to, PieceKind::Pawn, *po, captured, false, en_passant));
         }
     }
 

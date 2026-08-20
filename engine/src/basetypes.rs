@@ -203,6 +203,7 @@ pub struct Move {
     to: Square,
     piece_kind: PieceKind,
     promotion: Option<PieceKind>,
+    captured: Option<PieceKind>,
     castling: bool,
     en_passant: bool,
 }
@@ -210,9 +211,10 @@ pub struct Move {
 impl Move {
 
     pub fn new(from: Square, to: Square, piece_kind: PieceKind, 
-               promotion: Option<PieceKind>, castling: bool, en_passant: bool) -> Move {
+               promotion: Option<PieceKind>, captured: Option<PieceKind>, 
+               castling: bool, en_passant: bool) -> Move {
         
-        Move { from, to, piece_kind, promotion, castling, en_passant }
+        Move { from, to, piece_kind, promotion, captured, castling, en_passant }
 
     }
 
@@ -224,6 +226,7 @@ impl Move {
     pub fn to(&self) -> Square {self.to}
     pub fn piece(&self) -> PieceKind {self.piece_kind}
     pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
+    pub fn captured(&self) -> Option<PieceKind> {self.captured}
     pub fn castling(&self) -> bool {self.castling}
     pub fn en_passant(&self) -> bool {self.en_passant}
 }
@@ -261,12 +264,14 @@ impl InputMove {
     
         let Some(from_piece) = pos.piece_by_square[self.from] else { return Err(GenericErr::InvalidMove)};
         let to_piece = pos.piece_by_square[self.to];
+        let captured = pos.piece_by_square[self.to].map(|x| x.kind);
         let en_passant = from_piece.kind == PieceKind::Pawn && to_piece.is_none() && self.from.file() != self.to.file();
         Ok(Move {
             from: self.from,
             to: self.to,
             piece_kind: from_piece.kind,
             promotion: self.promotion,
+            captured: captured,
             castling: match from_piece.kind {
                 PieceKind::King => self.from.file().as_num().abs_diff(self.to.file().as_num()) == 2,
                 _ => false,

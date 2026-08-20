@@ -28,7 +28,7 @@ pub trait Engine {
     fn set_position(&mut self, fen: Option<&str>, moves: &[Move]);
 
     /// Legal moves for the side to move in the current position.
-    fn legal_moves(&self) -> Vec<Move>;
+    fn legal_moves(&mut self) -> Vec<Move>;
 
     // Make move
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
@@ -82,10 +82,16 @@ impl Engine for Apefish {
         }
     }
 
-    fn legal_moves(&self) -> Vec<Move> {
-        let candidate_moves = self.movegen.pseudo_legal_moves(&self.position);
-        // TODO: Next step is to validate them as actually legal moves
-        candidate_moves
+    fn legal_moves(&mut self) -> Vec<Move> {
+        self.movegen.pseudo_legal_moves(&self.position).into_iter().filter(|cm| {
+            match self.position.make_move(&self.movegen, *cm) {
+                Ok(m) => {
+                    self.position.unmake_move();
+                    true
+                },
+                Err(_) => false
+            }
+        }).collect()
     }
 
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {

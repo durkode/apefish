@@ -141,7 +141,6 @@ impl Position {
 
     // Make the move on the board.
     // Assumes the move is semi-legal. i.e. legal except for if it leaves the king in check, or castles from or through check
-    // TODO: We haven't yet implemented checking for check yet as part of is_attacked()
     // TODO: using Unwrap which will panic on invalid move. Return error instead.
     pub fn make_move(&mut self, mg: &MoveGen, m: Move) -> Result<(), GenericErr> {
         // Check Castling with check (both before, through, after) preconditions.
@@ -219,6 +218,33 @@ impl Position {
 
 
         Ok(())
+    }
+
+    pub fn unmake_move(&mut self) {
+        self.state = *self.history.peek();
+        let previous_move = self.state.next_move.unwrap();
+        self.state.next_move = None;
+        self.history.pop();
+
+        // State restored, now adjust the board.
+
+        // Add the piece back to the square it moved from
+        let piece_moved = Piece { side: self.state.active_side, kind: previous_move.piece() };
+        self.add_piece(&previous_move.from(), piece_moved);
+        self.remove_piece(&previous_move.to(), piece_moved);
+
+        // Now deal with the other pieces
+        if previous_move.castling() {
+            let direction = CastlingDirection::direction(previous_move.from(), previous_move.to()).unwrap();
+            let rook = Piece{kind: PieceKind::Rook, side: self.state.active_side};
+            self.add_piece(&direction.rook_from(), rook);
+            self.remove_piece(&direction.rook_to(), rook);
+        } else if previous_move.en_passant() {
+            let taken_pawn_square = Square::from_coords(previous_move.to().file(), previous_move.from().rank());
+            self.add_piece(&taken_pawn_square, Piece{side: self.state.active_side.other(), kind: PieceKind::Pawn});
+        } else if let Some(captured_piece_kind) = previous_move.captured() {
+            self.add_piece(&previous_move.to(), Piece { side: self.state.active_side.other(), kind: captured_piece_kind });
+        }
     }
 
     // Add a piece to a square, assumes square is empty.
