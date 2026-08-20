@@ -1,6 +1,6 @@
-use strum::EnumCount;
+use strum::{EnumCount, IntoEnumIterator};
 
-use crate::basetypes::{CastlingDirection, CastlingRights, PerSquare, Piece, PieceKind, Rank, Side, Square};
+use crate::{Position, basetypes::{CastlingDirection, CastlingRights, PerSquare, Piece, PieceKind, Rank, Side, Square}};
 
 // A lot of the fen related code isn't the most efficient. That said, Creating from FEN isn't a contested path
 // so will refactor it later if there is a need for performance.
@@ -141,4 +141,87 @@ fn fen_parse_full_move_number(full_move_string: &str) -> Result<u16, FenError> {
         Ok(x) => Ok(x),
         _ => Err(FenError::InvalidFullMoveNumber)
     }
+}
+
+pub fn to_fen(position: &Position) -> String {
+    format_fen_parts(to_fen_parts(position))
+}
+
+fn to_fen_parts(position: &Position) -> FenParts {
+    FenParts { 
+        pieces: position.piece_by_square, 
+        active_colour: position.state.active_side, 
+        castling_rights: position.state.castling, 
+        en_passant_square: position.state.en_passant, 
+        half_move_clock: position.state.half_move_clock, 
+        full_move_number: position.state.full_move_number
+    }
+}
+
+fn format_fen_parts(parts: FenParts) -> String {
+    let active_color = match parts.active_colour {
+        Side::White => "w",
+        Side::Black => "b",
+    };
+    let castling = 
+        CastlingDirection::iter().filter(|d| parts.castling_rights.has_rights(*d))
+                                 .map(|d| match d {
+                                    CastlingDirection::WK => "K",
+                                    CastlingDirection::WQ => "Q",
+                                    CastlingDirection::BK => "k",
+                                    CastlingDirection::BQ => "q",
+                                 }).collect::<Vec<&str>>().join("");
+    let castling = if castling.is_empty() {"-"} else { &castling };
+    let ep_square = match parts.en_passant_square {
+        Some(square) => {
+            &square.to_string()
+        }
+        None => "-"
+    };
+    let half_move_clock = parts.half_move_clock;
+    let full_move_number = parts.full_move_number;
+
+    let mut pieces_string = String::new();
+    let mut square_count = 0;
+    let mut blank_count = 0;
+    for (_, p) in parts.pieces.iter() {
+
+        if square_count > 0 && square_count % 8 == 0 {
+            if blank_count > 0 {
+                pieces_string.push_str(&blank_count.to_string());
+                blank_count = 0;
+            }
+            pieces_string.push('/');
+        }
+
+        let piece_char = match *p {
+            None => None,
+            Some(Piece { side: Side::White, kind: PieceKind::Pawn}) => Some('P'),
+            Some(Piece { side: Side::White, kind: PieceKind::Knight}) => Some('N'),
+            Some(Piece { side: Side::White, kind: PieceKind::King}) => Some('K'),
+            Some(Piece { side: Side::White, kind: PieceKind::Bishop}) => Some('B'),
+            Some(Piece { side: Side::White, kind: PieceKind::Queen}) => Some('Q'),
+            Some(Piece { side: Side::White, kind: PieceKind::Rook}) => Some('R'),
+            Some(Piece { side: Side::Black, kind: PieceKind::Pawn}) => Some('p'),
+            Some(Piece { side: Side::Black, kind: PieceKind::Knight}) => Some('n'),
+            Some(Piece { side: Side::Black, kind: PieceKind::King}) => Some('k'),
+            Some(Piece { side: Side::Black, kind: PieceKind::Bishop}) => Some('b'),
+            Some(Piece { side: Side::Black, kind: PieceKind::Queen}) => Some('q'),
+            Some(Piece { side: Side::Black, kind: PieceKind::Rook}) => Some('r'),
+        };
+        match piece_char {
+            None => { blank_count += 1; }
+            Some(x) => {
+                if blank_count > 0 {
+                    pieces_string.push_str(&blank_count.to_string());
+                    blank_count = 0;
+                }
+                pieces_string.push(x);
+            }
+        }
+
+        square_count += 1;
+    }
+
+    format!("{pieces_string} {active_color} {castling} {ep_square} {half_move_clock} {full_move_number}")
 }

@@ -14,7 +14,7 @@ pub mod search;
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::movegen::MoveGen;
+use crate::{fen::to_fen, movegen::MoveGen};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -26,6 +26,9 @@ pub trait Engine {
     /// Set the current position, optionally from a FEN (default: startpos), then
     /// apply `moves` in order.
     fn set_position(&mut self, fen: Option<&str>, moves: &[Move]);
+
+    // Get a fen string representing the current position
+    fn fen(&self) -> String;
 
     /// Legal moves for the side to move in the current position.
     fn legal_moves(&mut self) -> Vec<Move>;
@@ -80,6 +83,10 @@ impl Engine for Apefish {
         for m in moves {
             self.position.make_move(&self.movegen, *m).unwrap();
         }
+    }
+
+    fn fen(&self) -> String {
+        to_fen(&self.position)
     }
 
     fn legal_moves(&mut self) -> Vec<Move> {

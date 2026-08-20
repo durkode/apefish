@@ -124,6 +124,12 @@ impl Square {
         }
     }
 
+    pub fn to_string(self) -> String {
+        let file_char = (b'a' + self.file() as u8) as char;
+        let rank_num = self.rank() as u8 + 1;
+        format!("{file_char}{rank_num}")
+    }
+
     pub fn from_coords(file: File, rank: Rank) -> Self {
         // Unsafe code relies on File, Rank, Square remaining relationally static.
         unsafe { std::mem::transmute::<u8, Square>((file as u8) + (8 * rank as u8)) }
@@ -142,9 +148,8 @@ impl Square {
 impl fmt::Debug for Square {
     /// Algebraic notation, e.g. "d4".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let file_char = (b'a' + self.file() as u8) as char;
-        let rank_num = self.rank() as u8 + 1;
-        write!(f, "{file_char}{rank_num}")
+        let s = self.to_string();
+        write!(f, "{s}")
     }
 }
 
@@ -281,7 +286,7 @@ impl InputMove {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
 pub enum CastlingDirection {
     WK,
     WQ,

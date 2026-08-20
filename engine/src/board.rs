@@ -115,6 +115,10 @@ impl Position {
         Ok(())
     }
 
+    pub fn fen(&self) -> &str {
+        to_fen()
+    }
+
     fn reset_piece_bitboards(&mut self) {
         for (_side, piece_boards) in self.pieces.iter_mut() {
             for (_piece_kind, bb) in piece_boards.iter_mut() {
