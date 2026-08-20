@@ -319,11 +319,11 @@ impl MoveGen {
             for from_square in pos.pieces[pos.state.active_side][pk].iter_squares() {
                 match pk {
                     PieceKind::Queen => {
-                        self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, from_square);
-                        self.append_piece_moves(&mut moves, pos, PieceKind::Rook, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, PieceKind::Queen, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Rook, PieceKind::Queen, from_square);
                     },
                     _ => {
-                        self.append_piece_moves(&mut moves, pos, pk, from_square);
+                        self.append_piece_moves(&mut moves, pos, pk, pk, from_square);
                     },
                 }
             }
@@ -332,11 +332,11 @@ impl MoveGen {
         moves
     }
 
-    fn append_piece_moves(&self, moves: &mut Vec<Move>, pos: &Position, pk: PieceKind, from_square: Square) {
+    fn append_piece_moves(&self, moves: &mut Vec<Move>, pos: &Position, piece_kind_movement: PieceKind, piece_kind_actual: PieceKind, from_square: Square) {
         let active_side = pos.state.active_side;
         let other_side = active_side.other();
         let all_blockers = pos.sides_pieces[active_side] | pos.sides_pieces[other_side];
-        match pk {
+        match piece_kind_movement {
             PieceKind::Pawn => {
                 // TODO: For now just calculate pawns by hand. Possible we can speed this up with pre-calculated
                 let forward_direction_offset = match active_side {
@@ -372,13 +372,13 @@ impl MoveGen {
 
             },
             PieceKind::King | PieceKind::Knight => {
-                let move_map = self.raw_move[IndexedPieceKind::try_from(pk).unwrap()];
+                let move_map = self.raw_move[IndexedPieceKind::try_from(piece_kind_movement).unwrap()];
                 let square_moves = move_map[from_square] & !pos.sides_pieces[active_side];
                 for ts in square_moves.iter_squares() {
                     moves.push(Move::new(
                         from_square,
                         ts,
-                        pk,
+                        piece_kind_actual,
                         None,
                         pos.piece_by_square[ts].map(|x| x.kind),
                         false,
@@ -387,7 +387,7 @@ impl MoveGen {
                 }
             },
             PieceKind::Bishop | PieceKind::Rook => {
-                let spk = SlidingPieceKind::try_from(pk).unwrap();
+                let spk = SlidingPieceKind::try_from(piece_kind_movement).unwrap();
                 let blocker_mask = self.blocker_mask[spk][from_square];
                 let blockers = blocker_mask & all_blockers;
                 let square_moves = self.sliding_moves[spk][from_square][blockers.compressed_index(blocker_mask.to())] & !pos.sides_pieces[active_side];
@@ -395,7 +395,7 @@ impl MoveGen {
                     moves.push(Move::new(
                         from_square,
                         ts,
-                        pk,
+                        piece_kind_actual,
                         None,
                         pos.piece_by_square[ts].map(|x| x.kind),
                         false,
@@ -407,7 +407,7 @@ impl MoveGen {
 
         }
 
-        if pk == PieceKind::King {
+        if piece_kind_movement == PieceKind::King {
             // Castling
             // This is quite inefficient but lets get it working first and then optimise.
             for direction in CastlingDirection::for_side(active_side).iter().filter(|x| pos.state.castling.has_rights(**x)) {

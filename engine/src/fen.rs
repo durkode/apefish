@@ -225,6 +225,9 @@ fn format_fen_parts(parts: FenParts) -> String {
             square_count += 1;
         }
     }
+    if blank_count > 0 {
+        pieces_string.push_str(&blank_count.to_string());
+    }
 
     format!("{pieces_string} {active_color} {castling} {ep_square} {half_move_clock} {full_move_number}")
 }

@@ -223,9 +223,15 @@ pub fn bisect_mismatch<E: Engine>(engine: &mut E, fen: &str, mut prefix: Vec<Mov
                 .filter(|(mv, c)| sf_map.get(mv) == Some(c))
                 .collect();
 
+            // `divide` leaves the engine sitting wherever its last recursive
+            // perft call landed, not at this node - reset to `prefix` so the
+            // printed FEN is this exact position, not the wrong one.
+            engine.set_position(Some(fen), &prefix);
+            let node_fen = engine.fen();
+
             println!(
-                "bisect: DIVERGENCE FOUND (ours: {our_total} nodes, stockfish: {sf_total} nodes) - move list \
-                 itself disagrees at this node:"
+                "bisect: DIVERGENCE FOUND (ours: {our_total} nodes, stockfish: {sf_total} nodes) at fen \
+                 `{node_fen}` - move list itself disagrees at this node:"
             );
             for (mv, c) in &extra {
                 println!("  extra move our engine generates (illegal!): {mv} ({c} nodes under it)");

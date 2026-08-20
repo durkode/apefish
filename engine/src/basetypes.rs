@@ -296,10 +296,10 @@ pub enum CastlingDirection {
 
 impl CastlingDirection {
 
-    const WQ_UNATTACKED_SQUARES: &[Square] = &[Square::C1, Square::D1, Square::E1];
+    const WQ_UNATTACKED_SQUARES: &[Square] = &[Square::E1, Square::D1, Square::C1];
     const WK_UNATTACKED_SQUARES: &[Square] = &[Square::E1, Square::F1, Square::G1];
-    const BQ_UNATTACKED_SQUARES: &[Square] = &[Square::B8, Square::C8, Square::D8];
-    const BK_UNATTACKED_SQUARES: &[Square] = &[Square::F8, Square::G8];
+    const BQ_UNATTACKED_SQUARES: &[Square] = &[Square::E8, Square::D8, Square::C8];
+    const BK_UNATTACKED_SQUARES: &[Square] = &[Square::E8, Square::F8, Square::G8];
 
     pub fn direction(from: Square, to: Square) -> Option<CastlingDirection> {
         match (from, to) {
