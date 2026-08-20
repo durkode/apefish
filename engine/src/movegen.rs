@@ -3,7 +3,7 @@
 use strum::{IntoEnumIterator};
 
 use crate::Side;
-use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, EnumMap, File, IndexedPieceKind, Move, PerSide, PerSquare, PieceKind, Rank, SlidingPieceKind, Square};
+use crate::basetypes::{BB_FILES, BB_RANKS, Bitboard, CastlingDirection, EnumMap, File, IndexedPieceKind, Move, PerSide, PerSquare, PieceKind, Rank, SlidingPieceKind, Square};
 use crate::board::Position;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,7 +315,6 @@ impl MoveGen {
     pub fn pseudo_legal_moves(&self, pos: &Position) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
         
-
         for pk in PieceKind::iter() {
             for from_square in pos.pieces[pos.state.active_side][pk].iter_squares() {
                 match pk {
@@ -402,6 +401,26 @@ impl MoveGen {
             }
             PieceKind::Queen => { panic!("Should never call append_piece_moves with Queen")}
 
+        }
+
+        if pk == PieceKind::King {
+            // Castling
+            // This is quite inefficient but lets get it working first and then optimise.
+            for direction in CastlingDirection::for_side(active_side).iter().filter(|x| pos.state.castling.has_rights(**x)) {
+                let king_in_position = pos.pieces[active_side][PieceKind::King] & direction.king_from().bitboard() != Bitboard::EMPTY;
+                let rook_in_position = pos.pieces[active_side][PieceKind::Rook] & direction.rook_from().bitboard() != Bitboard::EMPTY;
+                let empty_squares_in_position = direction.empty_squares().iter().map(|s| s.bitboard()).reduce(|a, b| a | b).unwrap() & !(pos.sides_pieces[active_side] | pos.sides_pieces[other_side]) != Bitboard::EMPTY; 
+                if king_in_position && rook_in_position && empty_squares_in_position {
+                    moves.push(Move::new(
+                        direction.king_from(),
+                        direction.king_to(),
+                        PieceKind::King,
+                        None,
+                        true,
+                        false
+                    ))
+                }
+            }
         }
     }
 

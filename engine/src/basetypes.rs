@@ -336,6 +336,40 @@ impl CastlingDirection {
             CastlingDirection::BK => Square::F8,
         }
     }
+
+    pub fn king_from(self) -> Square {
+        match self {
+            CastlingDirection::WQ => Square::E1,
+            CastlingDirection::WK => Square::E1,
+            CastlingDirection::BQ => Square::E8,
+            CastlingDirection::BK => Square::E8
+        }
+    }
+
+    pub fn king_to(self) -> Square {
+        match self {
+            CastlingDirection::WQ => Square::C1,
+            CastlingDirection::WK => Square::G1,
+            CastlingDirection::BQ => Square::C8,
+            CastlingDirection::BK => Square::G8
+        }
+    }
+
+    pub fn empty_squares(self) -> &'static [Square] {
+        match self {
+            CastlingDirection::WQ => &[Square::D1, Square::C1, Square::B1],
+            CastlingDirection::WK => &[Square::F1, Square::G1],
+            CastlingDirection::BQ => &[Square::D8, Square::C8, Square::B8],
+            CastlingDirection::BK => &[Square::F8, Square::G8],
+        }
+    }
+
+    pub fn for_side(side: Side) -> &'static [Self] {
+        match side {
+            Side::White => &[CastlingDirection::WK, CastlingDirection::WQ],
+            Side::Black => &[CastlingDirection::BK, CastlingDirection::BQ]
+        }
+    }
 }
 
 // Struct to both store castling rights, and castling related logic.
