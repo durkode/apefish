@@ -417,8 +417,45 @@ impl MoveGen {
         }
     }
 
-    pub fn is_attacked(_pos: &Position, _square: Square) -> bool {
-        unimplemented!()
+    pub fn is_attacked(&self, pos: &Position, square: Square) -> bool {
+        // By symmetry, lookup attack tables from current position. If the target piece is attacking, this square
+        // is under attack.
+        let active_side = pos.state.active_side;
+        let other_side = active_side.other();
+        for pk in PieceKind::iter() {
+            match pk {
+                PieceKind::Queen => {} // Queen is covered by the Rook and Bishop cases.
+                PieceKind::King | PieceKind::Knight => {
+                    let ipk = IndexedPieceKind::try_from(pk).unwrap();
+                    if self.raw_move[ipk][square] & pos.pieces[other_side][pk] != Bitboard::EMPTY {
+                        return true
+                    }
+                },
+                PieceKind::Bishop | PieceKind::Rook => {
+                    let spk = SlidingPieceKind::try_from(pk).unwrap();
+                    let blocker_mask = self.blocker_mask[spk][square];
+                    let blockers = blocker_mask & (pos.sides_pieces[active_side] | pos.sides_pieces[other_side]);
+                    let moves= self.sliding_moves[spk][square][blockers.compressed_index(blocker_mask.to())];
+                    if moves & (pos.pieces[other_side][pk] | pos.pieces[other_side][PieceKind::Queen]) != Bitboard::EMPTY {
+                        return true
+                    }
+                },
+                PieceKind::Pawn => {
+                    // Symmetry: White pawn from curr square has reverse attack as Black pawn from take square.
+                    for piece_move in &PAWN_TAKES[active_side] {
+                        if square.bitboard() & !piece_move.impossible == Bitboard::EMPTY { 
+                            continue; 
+                        }
+                        let dest_bb = square.bitboard().shift_offset(piece_move.offset);
+                        if dest_bb & pos.pieces[other_side][PieceKind::Pawn] != Bitboard::EMPTY {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     // /// The game's current status, derived from `legal_moves` and draw conditions.

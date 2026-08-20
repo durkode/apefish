@@ -55,7 +55,7 @@ impl Apefish {
     pub fn new() -> Self {
         Apefish { 
             position: Position::new(), 
-            movegen: MoveGen::init(),
+            movegen:  MoveGen::init(),
         }
     }
 
@@ -78,7 +78,7 @@ impl Engine for Apefish {
             self.position.fen_setup(fen_string).unwrap();
         }
         for m in moves {
-            self.position.make_move(*m).unwrap();
+            self.position.make_move(&self.movegen, *m).unwrap();
         }
     }
 
@@ -91,7 +91,7 @@ impl Engine for Apefish {
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {
         let validated_move = to_make.to_internal_move(&self.position)?;
         println!("{validated_move:?}");
-        self.position.make_move(validated_move)?;
+        self.position.make_move(&self.movegen, validated_move)?;
         Ok(())
     }
 

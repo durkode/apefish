@@ -3,7 +3,7 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen};
+use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen, movegen::MoveGen};
 
 const MAX_MOVES: usize = 1024;
 
@@ -138,7 +138,7 @@ impl Position {
     // Assumes the move is semi-legal. i.e. legal except for if it leaves the king in check, or castles from or through check
     // TODO: We haven't yet implemented checking for check yet as part of is_attacked()
     // TODO: using Unwrap which will panic on invalid move. Return error instead.
-    pub fn make_move(&mut self, m: Move) -> Result<(), GenericErr> {
+    pub fn make_move(&mut self, mg: &MoveGen, m: Move) -> Result<(), GenericErr> {
         // Check Castling with check (both before, through, after) preconditions.
         let castling_direction = CastlingDirection::direction(m.from(), m.to());
         // TODO: it feels weird to treat castling as a separate case, but also it feels easier but more convoluted??
@@ -148,7 +148,7 @@ impl Position {
             // Need to check that the move is not in or moving through check.
             // 
             for s in castling_direction.unwrap().unattacked_squares_required() {
-                if self.is_attacked(*s, self.state.active_side) {
+                if mg.is_attacked(self, *s) {
                     return Err(GenericErr::InvalidCastleChecked)
                 }
             }
@@ -185,7 +185,7 @@ impl Position {
                 &castling_direction.unwrap().rook_to(), 
                 Piece{side: self.state.active_side, kind: PieceKind::Rook}
             );
-        } else if self.is_attacked(self.king_square(), self.state.active_side) {
+        } else if mg.is_attacked(self, self.king_square()) {
             // Oh no, we are in check. Revert everything back and return an error
             self.remove_piece(&m.to(), new_piece);
             self.add_piece(&m.from(), Piece{side: self.state.active_side, kind: m.piece()});
@@ -228,11 +228,6 @@ impl Position {
         self.pieces[piece.side][piece.kind] &= !square.bitboard();
         self.sides_pieces[piece.side] &= !square.bitboard();
         self.piece_by_square[*square] = None;
-    }
-
-    fn is_attacked(&self, _square: Square, _candidate_square_side: Side) -> bool {
-        // TODO: implement
-        false 
     }
 
     // What square is the king on for the active side
