@@ -1,6 +1,6 @@
 use strum::{EnumCount, IntoEnumIterator};
 
-use crate::{Position, basetypes::{CastlingDirection, CastlingRights, PerSquare, Piece, PieceKind, Rank, Side, Square}};
+use crate::{Position, basetypes::{CastlingDirection, CastlingRights, File, PerSquare, Piece, PieceKind, Rank, Side, Square}};
 
 // A lot of the fen related code isn't the most efficient. That said, Creating from FEN isn't a contested path
 // so will refactor it later if there is a need for performance.
@@ -149,7 +149,7 @@ pub fn to_fen(position: &Position) -> String {
 
 fn to_fen_parts(position: &Position) -> FenParts {
     FenParts { 
-        pieces: position.piece_by_square, 
+        pieces: position.piece_by_square.clone(), 
         active_colour: position.state.active_side, 
         castling_rights: position.state.castling, 
         en_passant_square: position.state.en_passant, 
@@ -184,43 +184,46 @@ fn format_fen_parts(parts: FenParts) -> String {
     let mut pieces_string = String::new();
     let mut square_count = 0;
     let mut blank_count = 0;
-    for (_, p) in parts.pieces.iter() {
 
-        if square_count > 0 && square_count % 8 == 0 {
-            if blank_count > 0 {
-                pieces_string.push_str(&blank_count.to_string());
-                blank_count = 0;
-            }
-            pieces_string.push('/');
-        }
-
-        let piece_char = match *p {
-            None => None,
-            Some(Piece { side: Side::White, kind: PieceKind::Pawn}) => Some('P'),
-            Some(Piece { side: Side::White, kind: PieceKind::Knight}) => Some('N'),
-            Some(Piece { side: Side::White, kind: PieceKind::King}) => Some('K'),
-            Some(Piece { side: Side::White, kind: PieceKind::Bishop}) => Some('B'),
-            Some(Piece { side: Side::White, kind: PieceKind::Queen}) => Some('Q'),
-            Some(Piece { side: Side::White, kind: PieceKind::Rook}) => Some('R'),
-            Some(Piece { side: Side::Black, kind: PieceKind::Pawn}) => Some('p'),
-            Some(Piece { side: Side::Black, kind: PieceKind::Knight}) => Some('n'),
-            Some(Piece { side: Side::Black, kind: PieceKind::King}) => Some('k'),
-            Some(Piece { side: Side::Black, kind: PieceKind::Bishop}) => Some('b'),
-            Some(Piece { side: Side::Black, kind: PieceKind::Queen}) => Some('q'),
-            Some(Piece { side: Side::Black, kind: PieceKind::Rook}) => Some('r'),
-        };
-        match piece_char {
-            None => { blank_count += 1; }
-            Some(x) => {
+    for r in Rank::iter().rev() {
+        for f in File::iter() {
+            let p = parts.pieces[Square::from_coords(f, r,)];
+            if square_count > 0 && square_count % 8 == 0 {
                 if blank_count > 0 {
                     pieces_string.push_str(&blank_count.to_string());
                     blank_count = 0;
                 }
-                pieces_string.push(x);
+                pieces_string.push('/');
             }
-        }
 
-        square_count += 1;
+            let piece_char = match p {
+                None => None,
+                Some(Piece { side: Side::White, kind: PieceKind::Pawn}) => Some('P'),
+                Some(Piece { side: Side::White, kind: PieceKind::Knight}) => Some('N'),
+                Some(Piece { side: Side::White, kind: PieceKind::King}) => Some('K'),
+                Some(Piece { side: Side::White, kind: PieceKind::Bishop}) => Some('B'),
+                Some(Piece { side: Side::White, kind: PieceKind::Queen}) => Some('Q'),
+                Some(Piece { side: Side::White, kind: PieceKind::Rook}) => Some('R'),
+                Some(Piece { side: Side::Black, kind: PieceKind::Pawn}) => Some('p'),
+                Some(Piece { side: Side::Black, kind: PieceKind::Knight}) => Some('n'),
+                Some(Piece { side: Side::Black, kind: PieceKind::King}) => Some('k'),
+                Some(Piece { side: Side::Black, kind: PieceKind::Bishop}) => Some('b'),
+                Some(Piece { side: Side::Black, kind: PieceKind::Queen}) => Some('q'),
+                Some(Piece { side: Side::Black, kind: PieceKind::Rook}) => Some('r'),
+            };
+            match piece_char {
+                None => { blank_count += 1; }
+                Some(x) => {
+                    if blank_count > 0 {
+                        pieces_string.push_str(&blank_count.to_string());
+                        blank_count = 0;
+                    }
+                    pieces_string.push(x);
+                }
+            }
+
+            square_count += 1;
+        }
     }
 
     format!("{pieces_string} {active_color} {castling} {ep_square} {half_move_clock} {full_move_number}")

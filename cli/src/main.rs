@@ -78,6 +78,9 @@ fn main() {
         println!("{m}");
     }
 
+    let fen_out = af.fen();
+    println!("FEN: {fen_out}");
+
 }
 
 // /// Render the current position to the terminal.

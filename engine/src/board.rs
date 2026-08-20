@@ -115,8 +115,8 @@ impl Position {
         Ok(())
     }
 
-    pub fn fen(&self) -> &str {
-        to_fen()
+    pub fn fen(&self) -> String {
+        fen::to_fen(&self)
     }
 
     fn reset_piece_bitboards(&mut self) {
