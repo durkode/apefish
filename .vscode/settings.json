@@ -1,0 +1,8 @@
+{
+    "lldb.launch.initCommands": [
+        "command script import ${workspaceFolder}/.vscode/formatters/apefish_formatters.py"
+    ],
+    "lldb.launch.sourceLanguages": [
+        "rust"
+    ]
+}

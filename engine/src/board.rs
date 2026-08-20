@@ -89,11 +89,11 @@ impl Position {
             state: PositionState::new(),
             history: PositionHistory::new(),
         };
-        position.reset();
+        position.reset_to_start_fen();
         position
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset_to_start_fen(&mut self) {
         self.fen_setup(fen::STARTING_FEN).unwrap();
     }
 
@@ -121,6 +121,11 @@ impl Position {
                 *bb = Bitboard::EMPTY;
             }
         }
+
+        for (_side, bb) in self.sides_pieces.iter_mut() {
+            *bb = Bitboard::EMPTY;
+        }
+
     }
 
     fn initialise_bitboards_from_piece_list(&mut self) {

@@ -35,7 +35,7 @@ impl Side {
 /// Piece kinds that move by sliding along a ray until blocked.
 /// Piece kinds whose moves are generated from precomputed, per-square lookup tables.
 #[subenum(SlidingPieceKind, IndexedPieceKind)]
-#[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
+#[derive(strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum PieceKind {
     Pawn,
@@ -48,6 +48,24 @@ pub enum PieceKind {
     Queen,
     #[subenum(IndexedPieceKind)]
     King,
+}
+
+impl fmt::Debug for PieceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl fmt::Debug for IndexedPieceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (index {})", PieceKind::from(*self), self.index())
+    }
+}
+
+impl fmt::Debug for SlidingPieceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (sliding)", PieceKind::from(*self))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +97,7 @@ impl Piece {
 }
 
 /// A single square on the board (a1 = 0 ... h8 = 63). Encoding TBD.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter, strum::EnumString)]
+#[derive(Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter, strum::EnumString)]
 #[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum Square {
@@ -119,6 +137,15 @@ impl Square {
         unsafe { std::mem::transmute::<u8, File>((self as u8) % 8) }
     }
 
+}
+
+impl fmt::Debug for Square {
+    /// Algebraic notation, e.g. "d4".
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let file_char = (b'a' + self.file() as u8) as char;
+        let rank_num = self.rank() as u8 + 1;
+        write!(f, "{file_char}{rank_num}")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
@@ -204,7 +231,7 @@ impl Move {
 impl fmt::Display for Move {
     /// UCI-style notation, e.g. "e2e4" or "e7e8q" for a promotion.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", format!("{:?}", self.from).to_lowercase(), format!("{:?}", self.to).to_lowercase())?;
+        write!(f, "{:?}{:?}", self.from, self.to)?;
         if let Some(promotion) = self.promotion {
             let promo_char = match promotion {
                 PieceKind::Queen => 'q',
@@ -382,8 +409,15 @@ impl CastlingRights {
 // Bitboards. This is a 'NewType' over a u64, and as such AI has been used to allow 
 // bitwise operations on bitboards as if they were a u64.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Bitboard(pub u64);
+
+impl fmt::Debug for Bitboard {
+    /// A list of the set squares, e.g. "[a1, e6, d4]".
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter_squares()).finish()
+    }
+}
 
 impl Bitboard {
     pub const EMPTY: Bitboard = Bitboard(0);
