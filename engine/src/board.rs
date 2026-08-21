@@ -58,15 +58,10 @@ impl PositionHistory {
     }
 
     // pop from stack. Don't actually need to return or delete.
-    pub fn pop(&mut self) {
+    pub fn pop(&mut self) -> &PositionState {
         self.stack_pointer -= 1;
+        &self.stack_array[self.stack_pointer+1]
     }
-
-    pub fn peek(&self) -> &PositionState {
-        &self.stack_array[self.stack_pointer]
-    }
-
-
 }
 
 /// A chess position.
@@ -245,30 +240,28 @@ impl Position {
     }
 
     pub fn unmake_move(&mut self) {
-        self.state = *self.history.peek();
-        let previous_move = self.state.next_move.unwrap();
-        self.state.next_move = None;
-        self.history.pop();
-
-        // State restored, now adjust the board.
+        let post_move_state = *self.history.pop();
+        let previous_move = post_move_state.next_move.unwrap();
 
         // Add the piece back to the square it moved from
-        let piece_moved = Piece { side: self.state.active_side, kind: previous_move.piece() };
+        let piece_moved = Piece { side: self.state.active_side.other(), kind: previous_move.piece() };
         self.add_piece(&previous_move.from(), piece_moved);
         self.remove_piece(&previous_move.to(), piece_moved);
 
         // Now deal with the other pieces
         if previous_move.castling() {
             let direction = CastlingDirection::direction(previous_move.from(), previous_move.to()).unwrap();
-            let rook = Piece{kind: PieceKind::Rook, side: self.state.active_side};
+            let rook = Piece{kind: PieceKind::Rook, side: self.state.active_side.other()};
             self.add_piece(&direction.rook_from(), rook);
             self.remove_piece(&direction.rook_to(), rook);
         } else if previous_move.en_passant() {
             let taken_pawn_square = Square::from_coords(previous_move.to().file(), previous_move.from().rank());
-            self.add_piece(&taken_pawn_square, Piece{side: self.state.active_side.other(), kind: PieceKind::Pawn});
+            self.add_piece(&taken_pawn_square, Piece{side: self.state.active_side, kind: PieceKind::Pawn});
         } else if let Some(captured_piece_kind) = previous_move.captured() {
-            self.add_piece(&previous_move.to(), Piece { side: self.state.active_side.other(), kind: captured_piece_kind });
+            self.add_piece(&previous_move.to(), Piece { side: self.state.active_side, kind: captured_piece_kind });
         }
+
+        self.state = post_move_state;
     }
 
     // Add a piece to a square, assumes square is empty.
