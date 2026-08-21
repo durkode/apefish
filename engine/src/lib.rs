@@ -10,6 +10,7 @@ pub mod board;
 pub mod eval;
 pub mod movegen;
 pub mod search;
+mod zobrist;
 
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};

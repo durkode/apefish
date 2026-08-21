@@ -395,6 +395,7 @@ impl CastlingRights {
     pub const BK: CastlingRights = CastlingRights{rights: 4};
     pub const BQ: CastlingRights = CastlingRights{rights: 8};
     pub const ALL: CastlingRights = CastlingRights{rights: 15};
+    pub const NUM_RIGHTS_COMBOS: usize = 16;
 
     pub fn new(rights: CastlingRights) -> Self {
         rights.clone()
@@ -414,6 +415,10 @@ impl CastlingRights {
 
     pub fn remove_rights(&mut self, direction: CastlingDirection) {
         self.rights &= !direction.rights().rights;
+    }
+
+    pub fn rights_u8(&self) -> u8 {
+        self.rights
     }
 
     pub fn remove_rights_for_move(&mut self, side: Side, from: Square, piece_kind: PieceKind) {
@@ -829,6 +834,12 @@ impl<T> std::ops::IndexMut<Side> for PerSide<T> {
 // PerSquare
 #[derive(Debug, Clone, Copy)]
 pub struct PerSquare<T>([T; Square::COUNT]);
+
+impl<T> PerSquare<T> {
+    pub const fn from_array(values: [T; Square::COUNT]) -> Self {
+        Self(values)
+    }
+}
 
 impl<T> PerSquare<T>
 where

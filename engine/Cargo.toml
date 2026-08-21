@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rand = "0.10.2"
+rand_chacha = "0.10.0"
 strum = { version = "0.28.0", features = ["derive"] }
 subenum = "1.2.0"
