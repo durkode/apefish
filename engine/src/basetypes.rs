@@ -436,10 +436,10 @@ impl CastlingRights {
                     self.remove_rights(CastlingDirection::BK);
                     self.remove_rights(CastlingDirection::BQ);
                 },
-                (Side::White, Square::A8, PieceKind::Rook) => {
+                (Side::Black, Square::A8, PieceKind::Rook) => {
                     self.remove_rights(CastlingDirection::BQ);
                 },
-                (Side::White, Square::H8, PieceKind::Rook) => {
+                (Side::Black, Square::H8, PieceKind::Rook) => {
                     self.remove_rights(CastlingDirection::BK);
                 },
                 // No match
