@@ -226,7 +226,13 @@ impl Position {
         // Update game state
         self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !captured_piece.is_none() {0} else {self.state.half_move_clock + 1};
         self.state.full_move_number += 1;
+
+        // TODO: Only update castling zobrists if there is a change
+        self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         self.state.castling.remove_rights_for_move(self.state.active_side, m.from(), m.piece());
+        self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
+        
+        self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         self.state.en_passant = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {
             (PieceKind::Pawn, Side::White, Rank::R2, Rank::R4) => Some(Square::from_coords(m.from().file(), Rank::R3)),
             (PieceKind::Pawn, Side::Black, Rank::R7, Rank::R5) => Some(Square::from_coords(m.from().file(), Rank::R6)),
@@ -269,6 +275,7 @@ impl Position {
         self.pieces[piece.side][piece.kind] |= square.bitboard();
         self.sides_pieces[piece.side] |= square.bitboard();
         self.piece_by_square[*square] = Some(piece);
+        self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(piece.side, piece.kind, *square);
     }
 
     // Remove a piece from a square.
@@ -276,6 +283,7 @@ impl Position {
         self.pieces[piece.side][piece.kind] &= !square.bitboard();
         self.sides_pieces[piece.side] &= !square.bitboard();
         self.piece_by_square[*square] = None;
+        self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(piece.side, piece.kind, *square);
     }
 
     // What square is the king on for the active side
