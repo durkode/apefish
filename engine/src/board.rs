@@ -3,7 +3,9 @@
 //! Internal representation (bitboards vs. mailbox) is not yet decided; `Position`
 //! is a placeholder type until that's chosen.
 
-use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen, movegen::MoveGen};
+use std::sync::Arc;
+
+use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen, movegen::MoveGen, zobrist::{ZobristKey, ZobristRandoms}};
 
 const MAX_MOVES: usize = 1024;
 
@@ -15,7 +17,8 @@ pub struct PositionState {
     pub half_move_clock: u8,
     pub full_move_number: u16,
     pub en_passant: Option<Square>,
-    pub next_move: Option<Move>
+    pub next_move: Option<Move>,
+    pub zobrist_hash: ZobristKey,
 }
 
 impl PositionState {
@@ -27,6 +30,7 @@ impl PositionState {
             full_move_number: 0,
             en_passant: None,
             next_move: None,
+            zobrist_hash: 0,
         }
     }
 }
@@ -73,12 +77,13 @@ pub struct Position {
     pub piece_by_square: PerSquare<Option<Piece>>,
     pub state: PositionState,
     pub history: PositionHistory,
+    zobrist_randoms: Arc<ZobristRandoms>,
 }
 
 impl Position {
 
     /// The standard starting position.
-    pub fn new() -> Self {
+    pub fn new(zobrists: Arc<ZobristRandoms>) -> Self {
         let pieces = PerSide::new(PerPiece::new(Bitboard::EMPTY));
         let sides_pieces = PerSide::new(Bitboard::EMPTY);
         let piece_list = PerSquare::new(None);
@@ -88,6 +93,7 @@ impl Position {
             piece_by_square: piece_list,
             state: PositionState::new(),
             history: PositionHistory::new(),
+            zobrist_randoms: zobrists,
         };
         position.reset_to_start_fen();
         position
@@ -108,8 +114,10 @@ impl Position {
             half_move_clock: fen_struct.half_move_clock, 
             full_move_number: fen_struct.full_move_number, 
             en_passant: fen_struct.en_passant_square, 
-            next_move: None 
+            next_move: None,
+            zobrist_hash: 0u64
         };
+        self.initialise_zobrists();
         self.history = PositionHistory::new();
 
         Ok(())
@@ -140,7 +148,19 @@ impl Position {
             self.pieces[piece.side][piece.kind] |= square.bitboard();
             self.sides_pieces[piece.side] |= square.bitboard();
         }
+    }
 
+    fn initialise_zobrists(&mut self) {
+        self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(self.state.en_passant);
+        self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
+        self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
+
+        // Now do the zobrists for all pieces
+        for (square, p) in self.piece_by_square.iter() {
+            if let Some(Piece{side, kind}) = *p {
+                self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
+            }
+        }
     }
 
     // Make the move on the board.
@@ -299,28 +319,4 @@ impl Position {
         println!("\n   A B C D E F G H");
     }
 
-
-
-    // /// Parse a position from Forsyth-Edwards Notation.
-    // pub fn from_fen(fen: &str) -> Result<Self, FenError> {
-    //     unimplemented!()
-    // }
-
-    // /// Serialize the position to Forsyth-Edwards Notation.
-    // pub fn to_fen(&self) -> String {
-    //     unimplemented!()
-    // }
-
-    // pub fn side_to_move(&self) -> Side {
-    //     unimplemented!()
-    // }
-
-    // pub fn piece_at(&self, sq: Square) -> Option<Piece> {
-    //     unimplemented!()
-    // }
-
-    // /// Apply a move to the position. Caller is responsible for ensuring legality.
-    // pub fn make_move(&mut self, mv: Move) {
-    //     unimplemented!()
-    // }
 }

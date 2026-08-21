@@ -4,9 +4,10 @@ use rand_chacha::ChaChaRng;
 use crate::{PieceKind, Square, basetypes::{CastlingRights, PerPiece, PerSide, PerSquare, Side}};
 
 
-type ZobristKey = u64;
+pub type ZobristKey = u64;
 const RNG_SEED: [u8; 32] = [54; 32];
 
+#[derive(Debug)]
 pub struct ZobristRandoms {
     piece_randoms: PerSide<PerPiece<PerSquare<ZobristKey>>>,
     side_randoms: PerSide<ZobristKey>,
