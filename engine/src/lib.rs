@@ -18,7 +18,7 @@ use std::sync::Arc;
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{fen::to_fen, movegen::MoveGen, zobrist::ZobristRandoms};
+use crate::{basetypes::{GameStatus, WinReason, DrawReason}, fen::to_fen, movegen::MoveGen, zobrist::ZobristRandoms};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -35,7 +35,7 @@ pub trait Engine {
     fn fen(&self) -> String;
 
     /// Legal moves for the side to move in the current position.
-    fn legal_moves(&mut self) -> Vec<Move>;
+    fn legal_moves(&self) -> Vec<Move>;
 
     // Make move
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
@@ -43,8 +43,8 @@ pub trait Engine {
     /// Undo the most recent `make_move`, restoring the prior position exactly.
     fn unmake_move(&mut self);
 
-    // /// Whether the game has ended, and how.
-    // fn game_status(&self) -> GameStatus;
+    /// Whether the game has ended, and how.
+    fn game_status(&self) -> GameStatus;
 
     // /// Search from the current position under the given limits and return the result.
     // fn go(&mut self, limits: SearchLimits) -> SearchResult;
@@ -99,11 +99,14 @@ impl Engine for Apefish {
         to_fen(&self.position)
     }
 
-    fn legal_moves(&mut self) -> Vec<Move> {
-        self.movegen.pseudo_legal_moves(&self.position).into_iter().filter(|cm| {
-            match self.position.make_move(&self.movegen, *cm) {
-                Ok(m) => {
-                    self.position.unmake_move();
+    fn legal_moves(&self) -> Vec<Move> {
+        // Make a clone to keep the function immutable.
+        // Given this is only a human (non-search) function, still relatively cheap.
+        let mut pos_clone = self.position.clone();
+        self.movegen.pseudo_legal_moves(&pos_clone).into_iter().filter(|cm| {
+            match pos_clone.make_move(&self.movegen, *cm) {
+                Ok(_) => {
+                    pos_clone.unmake_move();
                     true
                 },
                 Err(_) => false
@@ -121,9 +124,28 @@ impl Engine for Apefish {
         self.position.unmake_move();
     }
 
-    // fn game_status(&self) -> GameStatus {
-    //     unimplemented!()
-    // }
+    fn game_status(&self) -> GameStatus {
+        if self.legal_moves().is_empty() {
+             if self.position.in_check(&self.movegen) {
+                return GameStatus::Won { side: self.position.side_to_move().other(), reason: WinReason::Checkmate };
+             }
+             return GameStatus::Drawn { reason: DrawReason::Stalemate };
+        };
+
+        if self.position.half_move_clock() >= 100 {
+            return GameStatus::Drawn { reason: DrawReason::FiftyMoveRule };
+        };
+
+        if self.position.times_position_reached() >= 3 {
+            return GameStatus::Drawn { reason: DrawReason::ThreefoldRepetition };
+        };
+
+        if self.position.insufficient_material() {
+            return GameStatus::Drawn { reason: DrawReason::InsufficientMaterial };
+        };
+
+        GameStatus::Ongoing
+    }
 
     // fn go(&mut self, limits: SearchLimits) -> SearchResult {
     //     unimplemented!()

@@ -319,6 +319,56 @@ impl Position {
         self.pieces[self.state.active_side][PieceKind::King].single_square().unwrap()
     }
 
+    pub fn side_to_move(&self) -> Side {
+        self.state.active_side
+    }
+
+    pub fn in_check(&self, mg: &MoveGen) -> bool {
+        mg.is_attacked(self, self.king_square())
+    }
+
+    pub fn half_move_clock(&self) -> u8 {
+        self.state.half_move_clock
+    }
+
+    pub fn times_position_reached(&self) -> u64 {
+        self.zobrists_visited.count(self.state.zobrist_hash)
+    }
+
+    pub fn insufficient_material(&self) -> bool {
+        // FIDE definition for insufficient material
+
+        let mut found_minor_piece: Option<(Piece, bool)> = None;
+        for (side, pieces) in self.pieces.iter() {
+            for (pk, bb) in pieces.iter() {
+                match pk {
+                    PieceKind::King => {},
+                    PieceKind::Pawn | PieceKind::Rook | PieceKind::Queen => {return false},
+                    PieceKind::Bishop | PieceKind::Knight => {
+                        match bb.num_pieces() {
+                            0 => {},
+                            1 => {
+                                if let Some((found_piece, found_on_white_square)) = found_minor_piece {
+                                    if found_piece.kind == PieceKind::Bishop {
+                                        if bb.single_square().unwrap().is_white() != found_on_white_square {
+                                            return false
+                                        }
+                                    } else {
+                                        return false
+                                    }
+                                } else {
+                                    found_minor_piece = Some((Piece{side: side, kind: pk}, bb.single_square().unwrap().is_white()));
+                                }
+                            },
+                            _ => {return false}
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
     pub fn print_debug_state(&self) {
         for (side, per_piece) in self.pieces.iter() {
             println!("\n============= {side} ==========");

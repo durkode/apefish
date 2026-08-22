@@ -32,6 +32,29 @@ impl Side {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameStatus {
+    Ongoing,
+    Won { side: Side, reason: WinReason },
+    Drawn{ reason: DrawReason },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinReason {
+    Checkmate,
+    //Resignation,  // Potentially add these later if we want them in the layer.
+    //Timeout,       
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawReason {
+    Stalemate,
+    FiftyMoveRule,
+    ThreefoldRepetition,
+    InsufficientMaterial,
+    // Agreement,      // Potentially add later if we want them
+}
+
 /// Piece kinds that move by sliding along a ray until blocked.
 /// Piece kinds whose moves are generated from precomputed, per-square lookup tables.
 #[subenum(SlidingPieceKind, IndexedPieceKind)]
@@ -141,6 +164,10 @@ impl Square {
 
     pub fn file(self) -> File {
         unsafe { std::mem::transmute::<u8, File>((self as u8) % 8) }
+    }
+
+    pub fn is_white(self) -> bool {
+        (self as u8) % 2 == 1
     }
 
 }
@@ -499,6 +526,10 @@ impl Bitboard {
             1 => Some(unsafe { std::mem::transmute::<u8, Square>(self.0.trailing_zeros() as u8) }),
             _ => None
         }
+    }
+
+    pub fn num_pieces(self) -> u32 {
+        self.0.count_ones()
     }
 
     // For the current bitboard, compress the bits covered in mask to the least significant bits,

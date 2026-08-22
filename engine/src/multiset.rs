@@ -20,6 +20,10 @@ impl<K: Eq + Hash> MultiSet<K> {
         *self.counts.entry(key).or_insert(0) += 1;
     }
 
+    pub fn count(&self, key: K) -> u64 {
+        *self.counts.get(&key).unwrap_or(&0u64)
+    }
+
     pub fn remove(&mut self, key: K) -> Result<(), MultiSetErr>{
         match self.counts.entry(key) {
             Occupied(x) => {
