@@ -1,5 +1,5 @@
 
-use rand::{RngExt, SeedableRng, random};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaChaRng;
 use crate::{PieceKind, Square, basetypes::{CastlingRights, PerPiece, PerSide, PerSquare, Side}};
 
