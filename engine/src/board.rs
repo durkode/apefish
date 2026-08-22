@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{fen, movegen::MoveGen};
 use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
-use crate::multiset::{MultiSet, MultiSetErr};
+use crate::multiset::{MultiSet};
 use crate::zobrist::{ZobristKey, ZobristRandoms};
 
 const MAX_MOVES: usize = 1024;
@@ -264,7 +264,9 @@ impl Position {
     }
 
     pub fn unmake_move(&mut self) {
-        self.zobrists_visited.remove(self.state.zobrist_hash);
+        if let Err(_) = self.zobrists_visited.remove(self.state.zobrist_hash) {
+            panic!("Should not be removing unfound zobrists");
+        };
 
         // Note that the zobrist hash is held in the game state, and making moves modifies that.
         // So, we pop the previous game state from the history, use its "next move" info to undo that move,
@@ -273,10 +275,12 @@ impl Position {
         let post_move_state = *self.history.pop();
         let previous_move = post_move_state.next_move.unwrap();
 
-        // Add the piece back to the square it moved from
-        let piece_moved = Piece { side: self.state.active_side.other(), kind: previous_move.piece() };
-        self.add_piece(&previous_move.from(), piece_moved);
-        self.remove_piece(&previous_move.to(), piece_moved);
+        // Add the piece back to the square it moved from. Note the piece sitting on the
+        // destination square is the promoted kind (if any), not the original one, so it
+        // must be removed as that kind or its bitboard keeps a stale bit set.
+        let moved_side = self.state.active_side.other();
+        self.add_piece(&previous_move.from(), Piece { side: moved_side, kind: previous_move.piece() });
+        self.remove_piece(&previous_move.to(), Piece { side: moved_side, kind: previous_move.promotion().unwrap_or(previous_move.piece()) });
 
         // Now deal with the other pieces
         if previous_move.castling() {

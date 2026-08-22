@@ -40,6 +40,9 @@ pub trait Engine {
     // Make move
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
 
+    /// Undo the most recent `make_move`, restoring the prior position exactly.
+    fn unmake_move(&mut self);
+
     // /// Whether the game has ended, and how.
     // fn game_status(&self) -> GameStatus;
 
@@ -110,9 +113,12 @@ impl Engine for Apefish {
 
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {
         let validated_move = to_make.to_internal_move(&self.position)?;
-        println!("{validated_move:?}");
         self.position.make_move(&self.movegen, validated_move)?;
         Ok(())
+    }
+
+    fn unmake_move(&mut self) {
+        self.position.unmake_move();
     }
 
     // fn game_status(&self) -> GameStatus {

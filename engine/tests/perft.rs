@@ -1,8 +1,8 @@
 //! Move generation correctness tests, run purely against the public [`Engine`]
-//! trait (`set_position` + `legal_moves`). Nothing here touches `Position`,
-//! `MoveGen`, or any other internal type - if a future change here needs to
-//! reach into engine internals, that's a sign the `Engine` trait is missing
-//! a method, not a reason to import them.
+//! trait (`set_position`, `legal_moves`, `make_move`, `unmake_move`). Nothing
+//! here touches `Position`, `MoveGen`, or any other internal type - if a
+//! future change here needs to reach into engine internals, that's a sign
+//! the `Engine` trait is missing a method, not a reason to import them.
 //!
 //! Positions and expected node counts are taken from two independently
 //! verified, widely-used sources rather than hand-rolled, so the numbers
@@ -19,16 +19,11 @@
 //!   castling rights lost via rook capture, promotion (including out of and
 //!   into check), stalemate, and double check.
 //!
-//! ## Why replay-from-root perft
+//! ## Incremental perft
 //!
-//! The `Engine` trait has no `unmake_move`, so a node can't be reached by
-//! making a move and later undoing it. Instead each node is reached by
-//! calling `set_position(fen, moves_so_far)` with the full move list back to
-//! the root - the trait supports this directly since `legal_moves()` returns
-//! the same `Move` type `set_position` accepts. This is slower than an
-//! incremental perft (each node replays the whole path from the root), which
-//! is why the deepest/largest cases below are marked `#[ignore]`; run them
-//! with `cargo test -- --ignored` for a thorough (slow) pass.
+//! Each node is reached by `make_move`-ing one ply deeper and `unmake_move`-ing
+//! back out, rather than replaying the whole path from the root at every
+//! node - fast enough that even the largest cases below run by default.
 //!
 //! ## Debugging a failure
 //!
@@ -94,7 +89,6 @@ mod cpw_perft_results {
         assert_perft(STARTPOS, 4, 197_281);
     }
     #[test]
-    #[ignore = "slow: ~4.9M leaf nodes replayed from root each node; run with `cargo test -- --ignored`"]
     fn startpos_depth_5() {
         assert_perft(STARTPOS, 5, 4_865_609);
     }
@@ -112,7 +106,6 @@ mod cpw_perft_results {
         assert_perft(KIWIPETE, 3, 97_862);
     }
     #[test]
-    #[ignore = "slow: ~4.1M leaf nodes"]
     fn kiwipete_depth_4() {
         assert_perft(KIWIPETE, 4, 4_085_603);
     }
@@ -134,7 +127,6 @@ mod cpw_perft_results {
         assert_perft(POSITION_3, 4, 43_238);
     }
     #[test]
-    #[ignore = "slow: ~675K leaf nodes"]
     fn position_3_depth_5() {
         assert_perft(POSITION_3, 5, 674_624);
     }
@@ -152,7 +144,6 @@ mod cpw_perft_results {
         assert_perft(POSITION_4, 3, 9_467);
     }
     #[test]
-    #[ignore = "slow: ~422K leaf nodes"]
     fn position_4_depth_4() {
         assert_perft(POSITION_4, 4, 422_333);
     }
@@ -183,7 +174,6 @@ mod cpw_perft_results {
         assert_perft(POSITION_5, 3, 62_379);
     }
     #[test]
-    #[ignore = "slow: ~2.1M leaf nodes"]
     fn position_5_depth_4() {
         assert_perft(POSITION_5, 4, 2_103_487);
     }
@@ -201,7 +191,6 @@ mod cpw_perft_results {
         assert_perft(POSITION_6, 3, 89_890);
     }
     #[test]
-    #[ignore = "slow: ~3.9M leaf nodes"]
     fn position_6_depth_4() {
         assert_perft(POSITION_6, 4, 3_894_594);
     }
@@ -270,24 +259,20 @@ mod sedlak_movegen_positions {
     /// Castling out of check and castling through an attacked square must
     /// both be excluded, even with full castling rights and clear squares.
     #[test]
-    #[ignore = "slow: ~1.7M leaf nodes"]
     fn castling_prevented_by_attacked_squares_white() {
         assert_perft("r3k2r/8/5Q2/8/8/3q4/8/R3K2R w KQkq - 0 1", 4, 1_720_476);
     }
     #[test]
-    #[ignore = "slow: ~1.7M leaf nodes"]
     fn castling_prevented_by_attacked_squares_black() {
         assert_perft("r3k2r/8/3Q4/8/8/5q2/8/R3K2R b KQkq - 0 1", 4, 1_720_476);
     }
 
     /// Promotion is legal as a way of escaping check.
     #[test]
-    #[ignore = "slow: ~3.8M leaf nodes, the largest case in this suite"]
     fn promote_out_of_check_white() {
         assert_perft("2K2r2/4P3/8/8/8/8/8/3k4 w - - 0 1", 6, 3_821_001);
     }
     #[test]
-    #[ignore = "slow: ~3.8M leaf nodes, the largest case in this suite"]
     fn promote_out_of_check_black() {
         assert_perft("3K4/8/8/8/8/8/4p3/2k2R2 b - - 0 1", 6, 3_821_001);
     }
@@ -295,12 +280,10 @@ mod sedlak_movegen_positions {
     /// Moving a pinned/blocking piece can uncover a check from a sliding
     /// piece behind it.
     #[test]
-    #[ignore = "slow: ~1.0M leaf nodes"]
     fn discovered_check_white() {
         assert_perft("5K2/8/1Q6/2N5/8/1p2k3/8/8 w - - 0 1", 5, 1_004_658);
     }
     #[test]
-    #[ignore = "slow: ~1.0M leaf nodes"]
     fn discovered_check_black() {
         assert_perft("8/8/1P2K3/8/2n5/1q6/8/5k2 b - - 0 1", 5, 1_004_658);
     }
@@ -337,12 +320,10 @@ mod sedlak_movegen_positions {
     }
 
     #[test]
-    #[ignore = "slow: ~568K leaf nodes at depth 7"]
     fn stalemate_and_checkmate_white() {
         assert_perft("8/k1P5/8/1K6/8/8/8/8 w - - 0 1", 7, 567_584);
     }
     #[test]
-    #[ignore = "slow: ~568K leaf nodes at depth 7"]
     fn stalemate_and_checkmate_black() {
         assert_perft("8/8/8/8/1k6/8/K1p5/8 b - - 0 1", 7, 567_584);
     }

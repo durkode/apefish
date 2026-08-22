@@ -14,7 +14,7 @@
 //! `common/mod.rs` (rather than `common.rs`) is deliberate: it keeps cargo
 //! from treating this as its own top-level integration test binary.
 
-use apefish_engine::{Engine, Move, PieceKind, Square};
+use apefish_engine::{Engine, InputMove, Move, PieceKind, Square};
 use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -42,31 +42,39 @@ pub fn parse_uci_move<E: Engine>(engine: &mut E, uci: &str) -> Move {
         .unwrap_or_else(|| panic!("`{uci}` is not legal in the current position"))
 }
 
-/// Leaf node count `depth` plies below the node reached by `moves`, replaying
-/// from `fen` each time (there's no `unmake_move` on `Engine`, so each node
-/// is reached by replaying the whole path from the root).
+/// Leaf node count `depth` plies below the node reached by `moves`, using
+/// incremental `make_move`/`unmake_move` rather than replaying from `fen` at
+/// every node.
 /// (Used by perft.rs's `assert_perft`, not by the `perft_divide` example,
 /// which only ever calls `divide`.)
 #[allow(dead_code)]
 pub fn perft<E: Engine>(engine: &mut E, fen: &str, depth: u32) -> u64 {
-    fn go<E: Engine>(engine: &mut E, fen: &str, moves: &mut Vec<Move>, depth: u32) -> u64 {
-        if depth == 0 {
-            return 1;
-        }
-        engine.set_position(Some(fen), moves.as_slice());
-        let legal = engine.legal_moves();
-        if depth == 1 {
-            return legal.len() as u64;
-        }
-        let mut nodes = 0;
-        for mv in legal {
-            moves.push(mv);
-            nodes += go(engine, fen, moves, depth - 1);
-            moves.pop();
-        }
-        nodes
+    engine.set_position(Some(fen), &[]);
+    count_leaves(engine, depth)
+}
+
+fn to_input_move(mv: Move) -> InputMove {
+    InputMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() }
+}
+
+/// Leaf node count `depth` plies below the engine's current position, using
+/// incremental `make_move`/`unmake_move`. Shared by [`perft`] (from the root)
+/// and [`divide`] (from wherever it's positioned after each top-level move).
+fn count_leaves<E: Engine>(engine: &mut E, depth: u32) -> u64 {
+    if depth == 0 {
+        return 1;
     }
-    go(engine, fen, &mut Vec::new(), depth)
+    let legal = engine.legal_moves();
+    if depth == 1 {
+        return legal.len() as u64;
+    }
+    let mut nodes = 0;
+    for mv in legal {
+        engine.make_move(to_input_move(mv)).expect("legal move rejected by make_move");
+        nodes += count_leaves(engine, depth - 1);
+        engine.unmake_move();
+    }
+    nodes
 }
 
 /// Per-move leaf-node breakdown at the node reached by `prefix`, `depth`
@@ -77,32 +85,14 @@ pub fn divide<E: Engine>(engine: &mut E, fen: &str, prefix: &[Move], depth: u32)
     let mut rows = Vec::new();
     let mut total = 0u64;
     for mv in legal {
-        let mut moves = prefix.to_vec();
-        moves.push(mv);
-        let count = perft_from(engine, fen, &mut moves, depth - 1);
+        engine.make_move(to_input_move(mv)).expect("legal move rejected by make_move");
+        let count = count_leaves(engine, depth - 1);
+        engine.unmake_move();
         total += count;
         rows.push((mv, count));
     }
     rows.sort_by_key(|(mv, _)| mv.to_string());
     (rows, total)
-}
-
-fn perft_from<E: Engine>(engine: &mut E, fen: &str, moves: &mut Vec<Move>, depth: u32) -> u64 {
-    if depth == 0 {
-        return 1;
-    }
-    engine.set_position(Some(fen), moves.as_slice());
-    let legal = engine.legal_moves();
-    if depth == 1 {
-        return legal.len() as u64;
-    }
-    let mut nodes = 0;
-    for mv in legal {
-        moves.push(mv);
-        nodes += perft_from(engine, fen, moves, depth - 1);
-        moves.pop();
-    }
-    nodes
 }
 
 /// Locate a `stockfish` binary: `STOCKFISH_BIN` env var, then `stockfish` on
