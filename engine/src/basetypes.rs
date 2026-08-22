@@ -13,7 +13,7 @@ pub enum GenericErr {
     InvalidMove,
     IllegalMove,
     InvalidCastleSquares,
-    InvalidCastleChecked
+    InvalidCastleChecked,
 }
 
 #[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]

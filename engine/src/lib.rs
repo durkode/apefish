@@ -11,6 +11,7 @@ pub mod eval;
 pub mod movegen;
 pub mod search;
 mod zobrist;
+mod multiset;
 
 use std::sync::Arc;
 

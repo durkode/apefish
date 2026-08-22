@@ -5,7 +5,10 @@
 
 use std::sync::Arc;
 
-use crate::{PieceKind, basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, Rank, Side, Square}, fen, movegen::MoveGen, zobrist::{ZobristKey, ZobristRandoms}};
+use crate::{fen, movegen::MoveGen};
+use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
+use crate::multiset::{MultiSet, MultiSetErr};
+use crate::zobrist::{ZobristKey, ZobristRandoms};
 
 const MAX_MOVES: usize = 1024;
 
@@ -73,6 +76,7 @@ pub struct Position {
     pub state: PositionState,
     pub history: PositionHistory,
     zobrist_randoms: Arc<ZobristRandoms>,
+    zobrists_visited: MultiSet<ZobristKey>
 }
 
 impl Position {
@@ -89,6 +93,7 @@ impl Position {
             state: PositionState::new(),
             history: PositionHistory::new(),
             zobrist_randoms: zobrists,
+            zobrists_visited: MultiSet::new(),
         };
         position.reset_to_start_fen();
         position
@@ -156,6 +161,8 @@ impl Position {
                 self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
             }
         }
+
+        self.zobrists_visited.add(self.state.zobrist_hash);
     }
 
     // Make the move on the board.
@@ -227,25 +234,42 @@ impl Position {
         self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !captured_piece.is_none() {0} else {self.state.half_move_clock + 1};
         self.state.full_move_number += 1;
 
+        // Update castling rights
         // TODO: Only update castling zobrists if there is a change
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         self.state.castling.remove_rights_for_move(self.state.active_side, m.from(), m.piece());
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         
-        self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
-        self.state.en_passant = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {
+        // Update EP square
+        let new_ep_square = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {
             (PieceKind::Pawn, Side::White, Rank::R2, Rank::R4) => Some(Square::from_coords(m.from().file(), Rank::R3)),
             (PieceKind::Pawn, Side::Black, Rank::R7, Rank::R5) => Some(Square::from_coords(m.from().file(), Rank::R6)),
             _ => None
         };
-        self.state.next_move = None;
+        if new_ep_square != self.state.en_passant {
+            self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(self.state.en_passant);
+            self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(new_ep_square);
+            self.state.en_passant = new_ep_square;
+        }
+        
+        // Switch side
+        self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
         self.state.active_side = self.state.active_side.other();
+        self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
 
+        self.state.next_move = None;
+        self.zobrists_visited.add(self.state.zobrist_hash);
 
         Ok(())
     }
 
     pub fn unmake_move(&mut self) {
+        self.zobrists_visited.remove(self.state.zobrist_hash);
+
+        // Note that the zobrist hash is held in the game state, and making moves modifies that.
+        // So, we pop the previous game state from the history, use its "next move" info to undo that move,
+        // and then set the current state to be the popped state.
+
         let post_move_state = *self.history.pop();
         let previous_move = post_move_state.next_move.unwrap();
 
