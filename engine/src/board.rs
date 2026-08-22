@@ -232,7 +232,9 @@ impl Position {
 
         // Update game state
         self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !captured_piece.is_none() {0} else {self.state.half_move_clock + 1};
-        self.state.full_move_number += 1;
+        if self.state.active_side == Side::Black {
+            self.state.full_move_number += 1;
+        }
 
         // Update castling rights
         // TODO: Only update castling zobrists if there is a change
@@ -338,29 +340,31 @@ impl Position {
     pub fn insufficient_material(&self) -> bool {
         // FIDE definition for insufficient material
 
-        let mut found_minor_piece: Option<(Piece, bool)> = None;
         for (side, pieces) in self.pieces.iter() {
             for (pk, bb) in pieces.iter() {
-                match pk {
-                    PieceKind::King => {},
-                    PieceKind::Pawn | PieceKind::Rook | PieceKind::Queen => {return false},
-                    PieceKind::Bishop | PieceKind::Knight => {
-                        match bb.num_pieces() {
-                            0 => {},
-                            1 => {
-                                if let Some((found_piece, found_on_white_square)) = found_minor_piece {
-                                    if found_piece.kind == PieceKind::Bishop {
-                                        if bb.single_square().unwrap().is_white() != found_on_white_square {
-                                            return false
-                                        }
-                                    } else {
-                                        return false
-                                    }
-                                } else {
-                                    found_minor_piece = Some((Piece{side: side, kind: pk}, bb.single_square().unwrap().is_white()));
-                                }
-                            },
-                            _ => {return false}
+                if *bb != Bitboard::EMPTY {
+                    match pk {
+                        PieceKind::King => {},
+                        PieceKind::Pawn | PieceKind::Rook | PieceKind::Queen => {return false},
+                        PieceKind::Knight => {
+                            if self.sides_pieces[side].num_pieces() > 2 || self.sides_pieces[side.other()].num_pieces() > 1 {
+                                return false
+                            } else {
+                                return true
+                            }
+                        },
+                        PieceKind::Bishop => {
+                            let active_side_has_only_bishops = self.sides_pieces[side].num_pieces() <= bb.num_pieces() + 1;
+                            let other_bishops = self.pieces[side.other()][PieceKind::Bishop];
+                            let other_side_has_only_bishops = self.sides_pieces[side.other()].num_pieces() <= other_bishops.num_pieces() + 1;
+                            if active_side_has_only_bishops && other_side_has_only_bishops {
+                                // Now check all bishops are the same colour
+                                let first_bishop_is_white = bb.iter_squares().next().unwrap().is_white();
+                                let all_bishops_same_colour = (*bb | other_bishops).iter_squares().all(|s| s.is_white() == first_bishop_is_white);
+                                return all_bishops_same_colour;   
+                            } else {
+                                return false;
+                            }
                         }
                     }
                 }

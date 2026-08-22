@@ -167,7 +167,9 @@ impl Square {
     }
 
     pub fn is_white(self) -> bool {
-        (self as u8) % 2 == 1
+        // Use mod to work out square colour, however also need to add rank given
+        // that colour of left most square changes each rank.
+        ((self as u8) + (self as u8 / 8)) % 2 == 1
     }
 
 }

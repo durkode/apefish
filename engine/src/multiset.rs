@@ -29,6 +29,8 @@ impl<K: Eq + Hash> MultiSet<K> {
             Occupied(x) => {
                 if *x.get() == 0 {
                     x.remove();
+                } else {
+                    *x.into_mut() -= 1;
                 }
                 return Ok(())
             },
