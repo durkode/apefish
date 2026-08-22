@@ -35,7 +35,7 @@ pub trait Engine {
     fn fen(&self) -> String;
 
     /// Legal moves for the side to move in the current position.
-    fn legal_moves(&self) -> Vec<Move>;
+    fn legal_moves(&mut self) -> Vec<Move>;
 
     // Make move
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
@@ -44,7 +44,7 @@ pub trait Engine {
     fn unmake_move(&mut self);
 
     /// Whether the game has ended, and how.
-    fn game_status(&self) -> GameStatus;
+    fn game_status(&mut self) -> GameStatus;
 
     // /// Search from the current position under the given limits and return the result.
     // fn go(&mut self, limits: SearchLimits) -> SearchResult;
@@ -99,14 +99,11 @@ impl Engine for Apefish {
         to_fen(&self.position)
     }
 
-    fn legal_moves(&self) -> Vec<Move> {
-        // Make a clone to keep the function immutable.
-        // Given this is only a human (non-search) function, still relatively cheap.
-        let mut pos_clone = self.position.clone();
-        self.movegen.pseudo_legal_moves(&pos_clone).into_iter().filter(|cm| {
-            match pos_clone.make_move(&self.movegen, *cm) {
+    fn legal_moves(&mut self) -> Vec<Move> {
+        self.movegen.pseudo_legal_moves(&self.position).into_iter().filter(|cm| {
+            match self.position.make_move(&self.movegen, *cm) {
                 Ok(_) => {
-                    pos_clone.unmake_move();
+                    self.position.unmake_move();
                     true
                 },
                 Err(_) => false
@@ -124,7 +121,7 @@ impl Engine for Apefish {
         self.position.unmake_move();
     }
 
-    fn game_status(&self) -> GameStatus {
+    fn game_status(&mut self) -> GameStatus {
         if self.legal_moves().is_empty() {
              if self.position.in_check(&self.movegen) {
                 return GameStatus::Won { side: self.position.side_to_move().other(), reason: WinReason::Checkmate };
