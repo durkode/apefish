@@ -79,6 +79,7 @@ fn count_leaves<E: Engine>(engine: &mut E, depth: u32) -> u64 {
 
 /// Per-move leaf-node breakdown at the node reached by `prefix`, `depth`
 /// plies deep - i.e. `perft(depth - 1)` from each of that node's legal moves.
+#[allow(dead_code)]
 pub fn divide<E: Engine>(engine: &mut E, fen: &str, prefix: &[Move], depth: u32) -> (Vec<(Move, u64)>, u64) {
     engine.set_position(Some(fen), prefix);
     let legal = engine.legal_moves();
@@ -99,6 +100,7 @@ pub fn divide<E: Engine>(engine: &mut E, fen: &str, prefix: &[Move], depth: u32)
 /// PATH, then the usual Debian/Ubuntu location. Returns `None` rather than
 /// failing outright, since Stockfish isn't guaranteed to be installed
 /// everywhere `cargo test` runs.
+#[allow(dead_code)]
 pub fn find_stockfish() -> Option<String> {
     if let Ok(p) = env::var("STOCKFISH_BIN") {
         return Some(p);
@@ -114,6 +116,7 @@ pub fn find_stockfish() -> Option<String> {
 
 /// Run `go perft <depth>` on `sf_bin` from `fen` + `prefix_uci`, returning
 /// the same per-move breakdown as [`divide`].
+#[allow(dead_code)]
 pub fn stockfish_divide(sf_bin: &str, fen: &str, prefix_uci: &[String], depth: u32) -> (Vec<(String, u64)>, u64) {
     let position_cmd = if prefix_uci.is_empty() {
         format!("position fen {fen}")
@@ -164,6 +167,7 @@ pub fn stockfish_divide(sf_bin: &str, fen: &str, prefix_uci: &[String], depth: u
 /// until it isolates either an outright move-list disagreement (the bug
 /// itself) or, in the unexpected case, a clean match. Prints its trace as
 /// it goes; does nothing but print a note if no `stockfish` binary is found.
+#[allow(dead_code)]
 pub fn bisect_mismatch<E: Engine>(engine: &mut E, fen: &str, mut prefix: Vec<Move>, mut depth: u32) {
     let Some(sf_bin) = find_stockfish() else {
         println!(
