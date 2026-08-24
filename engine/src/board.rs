@@ -36,6 +36,11 @@ impl PositionState {
     }
 }
 
+pub trait Reset {
+    // Reset a struct back to original state
+    fn reset(&mut self) -> &mut Self;
+}
+
 type PositionHistory = Stack<PositionState, MAX_MOVES>;
 type AlteredPieceHistory = Stack<AlteredPieces, MAX_MOVES>;
 
@@ -58,19 +63,27 @@ impl<T: Copy, const N: usize> Stack<T, N> {
 
 impl<T, const N: usize> Stack<T, N> {
     // push to stack
-    pub fn push(&mut self, state: T) {
+    pub fn push(&mut self, item: T) {
         self.stack_pointer += 1;
-        self.stack_array[self.stack_pointer] = state;
+        self.stack_array[self.stack_pointer - 1] = item;
     }
 
     // pop from stack. Don't actually need to return or delete.
     pub fn pop(&mut self) -> &T {
         self.stack_pointer -= 1;
-        &self.stack_array[self.stack_pointer+1]
+        &self.stack_array[self.stack_pointer]
     }
 
     pub fn peek(&self) -> &T {
-        &self.stack_array[self.stack_pointer]
+        &self.stack_array[self.stack_pointer - 1]
+    }
+}
+
+impl <T: Copy + Reset, const N: usize> Stack<T, N> {
+    // Essentially a push to the stack, but repurposing the existing next element of array
+    pub fn increment_and_reset(&mut self) -> &mut T {
+        self.stack_pointer += 1;
+        self.stack_array[self.stack_pointer - 1].reset()
     }
 }
 
@@ -97,6 +110,17 @@ impl AlteredPieces {
     pub fn add(&mut self, piece_change: PieceChange) {
         self.changes[self.count] = piece_change;
         self.count += 1;
+    }
+
+    pub fn clear(&mut self) {
+        self.count = 0;
+    }
+}
+
+impl Reset for AlteredPieces {
+    fn reset(&mut self) -> &mut Self {
+        self.count = 0;
+        self
     }
 }
 
@@ -204,72 +228,16 @@ impl Position {
     // Assumes the move is semi-legal. i.e. legal except for if it leaves the king in check, or castles from or through check
     // TODO: using Unwrap which will panic on invalid move. Return error instead.
     pub fn make_move(&mut self, mg: &MoveGen, m: Move) -> Result<(), GenericErr> {
-        // Check Castling with check (both before, through, after) preconditions.
-        // let castling_direction = CastlingDirection::direction(m.from(), m.to());
-        // // TODO: it feels weird to treat castling as a separate case, but also it feels easier but more convoluted??
-        // // Think about this structure further
-        // if m.castling() {
-        //     // Assume that Move Generator has already validated castling rights and that squares are clear
-        //     // Need to check that the move is not in or moving through check.
-        //     // 
-        //     for s in castling_direction.unwrap().unattacked_squares_required() {
-        //         if mg.is_attacked(self, *s) {
-        //             return Err(GenericErr::InvalidCastleChecked)
-        //         }
-        //     }
-        // }
 
         // Put the current move to make on the game state and push to history
         self.history.push(self.state.clone());
-
         let mut altered_pieces = AlteredPieces::default();
-
-        // // Remove the moving piece
-        // self.remove_piece(&m.from(), self.piece_by_square[m.from()].unwrap());
-        
-        // // add the piece to the destination square
-        // let captured_piece = self.piece_by_square[m.to()];
-        // if !captured_piece.is_none() {
-        //     self.remove_piece(&m.to(), captured_piece.unwrap());
-        // }
-        // let new_piece = Piece{ side: self.state.active_side, kind: m.promotion().unwrap_or(m.piece())};
-        // self.add_piece(&m.to(), new_piece);
-
-        // // En Passant
-        // if m.en_passant() {
-        //     let ep_square = Square::from_coords(m.to().file(), m.from().rank());
-        //     self.remove_piece(&ep_square, self.piece_by_square[ep_square].unwrap());
-        // }
-
-        // // Castling: move the rook
-        // if m.castling() {
-        //     self.remove_piece(
-        //         &castling_direction.unwrap().rook_from(), 
-        //         self.piece_by_square[castling_direction.unwrap().rook_from()].unwrap()
-        //     );
-        //     self.add_piece(
-        //         &castling_direction.unwrap().rook_to(), 
-        //         Piece{side: self.state.active_side, kind: PieceKind::Rook}
-        //     );
-        // } else if mg.is_attacked(self, self.king_square()) {
-        //     // Oh no, we are in check. Revert everything back and return an error
-        //     self.remove_piece(&m.to(), new_piece);
-        //     self.add_piece(&m.from(), Piece{side: self.state.active_side, kind: m.piece()});
-        //     // Add back the taken piece
-        //     if m.en_passant() {
-        //         self.add_piece(&Square::from_coords(m.to().file(), m.from().rank()), Piece{ side: self.state.active_side.other(), kind: PieceKind::Pawn});
-        //     } else if !captured_piece.is_none() {
-        //         self.add_piece(&m.to(), captured_piece.unwrap());
-        //     }
-
-        //     self.history.pop();
-        //     return Err(IllegalMove)
-        // }
 
         // Iterate through move types to generate the change log. The order should be:
         //   - Castling
         //   - En Passant
         //   - Promotion
+        // Note: the order that board changes are added to altered_pieces matters to avoid corruption!!
         if m.castling() {
             let castling_direction = CastlingDirection::direction(m.from(), m.to());
             for s in castling_direction.unwrap().unattacked_squares_required() {
@@ -334,16 +302,15 @@ impl Position {
         }
 
         // Now move the pieces
-        self.apply_change_log_to_board(altered_pieces);
+        self.apply_change_log_to_board(&altered_pieces);
 
         // If in check, delete change log and return err
         if mg.is_attacked(self, self.king_square()) {
-            self.reverse_change_log_to_board(altered_pieces);
+            self.reverse_change_log_to_board(&altered_pieces);
             self.history.pop();
             return Err(IllegalMove)
         }
 
-        // Move successful
         self.piece_change_log.push(altered_pieces);
 
         // Update game state
@@ -388,14 +355,12 @@ impl Position {
         };
 
         let ap = *self.piece_change_log.pop();
-        self.reverse_change_log_to_board(ap);
+        self.reverse_change_log_to_board(&ap);
 
         self.state = *self.history.pop();
     }
 
-    // TODO: Ideally we would just take a reference to AP, but borrow checker isn't liking me right now
-    // Fix this later.
-    fn apply_change_log_to_board(&mut self, altered_pieces: AlteredPieces) {
+    fn apply_change_log_to_board(&mut self, altered_pieces: &AlteredPieces) {
         for ap in altered_pieces.piece_changes() {
             if let Some(from) = ap.from {
                 self.remove_piece(&from, ap.piece);
@@ -406,7 +371,7 @@ impl Position {
         }
     }
 
-    fn reverse_change_log_to_board(&mut self, altered_pieces: AlteredPieces) {
+    fn reverse_change_log_to_board(&mut self, altered_pieces: &AlteredPieces) {
         for ap in altered_pieces.piece_changes().iter().rev() {
             if let Some(from) = ap.from {
                 self.add_piece(&from, ap.piece);
