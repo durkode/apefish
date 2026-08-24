@@ -5,6 +5,9 @@
 
 use std::sync::Arc;
 
+use crate::eval::incremental_eval;
+use crate::phase::{PhaseScore, incremental_phase_score};
+use crate::psqt::TaperedValue;
 use crate::{fen, movegen::MoveGen};
 use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
 use crate::multiset::{MultiSet};
@@ -21,6 +24,8 @@ pub struct PositionState {
     pub full_move_number: u16,
     pub en_passant: Option<Square>,
     pub zobrist_hash: ZobristKey,
+    pub phase_score: PhaseScore,
+    pub tapered_eval: TaperedValue,
 }
 
 impl PositionState {
@@ -32,6 +37,8 @@ impl PositionState {
             full_move_number: 0,
             en_passant: None,
             zobrist_hash: 0,
+            phase_score: 0,
+            tapered_eval: TaperedValue { mg: 0, eg: 0 }
         }
     }
 }
@@ -103,6 +110,7 @@ pub struct AlteredPieces {
 }
 
 impl AlteredPieces {
+
     pub fn piece_changes(&self) -> &[PieceChange] {
         &self.changes[0..self.count]
     }
@@ -174,9 +182,11 @@ impl Position {
             half_move_clock: fen_struct.half_move_clock, 
             full_move_number: fen_struct.full_move_number, 
             en_passant: fen_struct.en_passant_square, 
-            zobrist_hash: 0u64
+            zobrist_hash: 0u64,
+            phase_score: 0,
+            tapered_eval: TaperedValue { mg: 0, eg: 0 }
         };
-        self.initialise_zobrists();
+        self.initialise_incrementally_updated_fields();
         self.history = PositionHistory::new(PositionState::new());
 
         Ok(())
@@ -209,20 +219,60 @@ impl Position {
         }
     }
 
-    fn initialise_zobrists(&mut self) {
+    fn initialise_incrementally_updated_fields(&mut self) {
+
         self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(self.state.en_passant);
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
 
-        // Now do the zobrists for all pieces
-        for (square, p) in self.piece_by_square.iter() {
-            if let Some(Piece{side, kind}) = *p {
+        let mut piece_value = TaperedValue{mg: 0, eg: 0};
+        let mut phase_score: PhaseScore = 0;
+        for (square, maybe_piece) in self.piece_by_square.iter() {
+            if let Some(piece) = maybe_piece {
+                let Piece{side, kind} = *piece;
+
                 self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
+
+                let piece_changes: &[PieceChange] = &[PieceChange{piece: *piece, from: None, to: Some(square)}];
+                piece_value = incremental_eval(piece_value, self, piece_changes);
+                phase_score = incremental_phase_score(phase_score, piece_changes);
             }
         }
+        self.state.tapered_eval = piece_value;
 
         self.zobrists_visited.add(self.state.zobrist_hash);
     }
+
+    // fn initialise_zobrists(&mut self) {
+    //     self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(self.state.en_passant);
+    //     self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
+    //     self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
+
+    //     // Now do the zobrists for all pieces
+    //     for (square, p) in self.piece_by_square.iter() {
+    //         if let Some(Piece{side, kind}) = *p {
+    //             self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
+    //         }
+    //     }
+
+    //     self.zobrists_visited.add(self.state.zobrist_hash);
+    // }
+
+    // fn initialise_phase_score(&mut self) {
+    //     let mut phase_score: PhaseScore = 0;
+    //     for
+    // }
+
+    // fn initialise_tapered_eval(&mut self) {
+    //     let mut piece_value = TaperedValue{mg: 0, eg: 0};
+    //     for (square, maybe_piece) in self.piece_by_square.iter() {
+    //         if let Some(piece) = maybe_piece {
+    //             let piece_changes: &[PieceChange] = &[PieceChange{piece: *piece, from: None, to: Some(square)}];
+    //             piece_value = incremental_eval(piece_value, self, piece_changes)
+    //         }
+    //     }
+    //     self.state.tapered_eval = piece_value;
+    // }
 
     // Make the move on the board.
     // Assumes the move is semi-legal. i.e. legal except for if it leaves the king in check, or castles from or through check
@@ -311,7 +361,14 @@ impl Position {
             return Err(IllegalMove)
         }
 
+        // ------------  Move Confirmed good at this point.  -----------
+
         self.piece_change_log.push(altered_pieces);
+
+
+        // Update incremental tallies
+        self.state.phase_score = incremental_phase_score(self.state.phase_score, altered_pieces.piece_changes());
+        self.state.tapered_eval = incremental_eval(self.state.tapered_eval, self, altered_pieces.piece_changes());
 
         // Update game state
         let reset_half_move_clock = m.piece() == PieceKind::Pawn || !m.captured().is_none();
@@ -401,6 +458,10 @@ impl Position {
     // What square is the king on for the active side
     fn king_square(&self) -> Square {
         self.pieces[self.state.active_side][PieceKind::King].single_square().unwrap()
+    }
+
+    pub fn all_pieces(&self) -> Bitboard {
+        self.sides_pieces[Side::White] | self.sides_pieces[Side::Black]
     }
 
     pub fn side_to_move(&self) -> Side {

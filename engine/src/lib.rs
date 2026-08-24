@@ -8,12 +8,14 @@ pub mod basetypes;
 pub mod fen;
 pub mod board;
 pub mod eval;
+pub mod psqt;
 pub mod movegen;
 pub mod search;
 mod zobrist;
 mod multiset;
 #[cfg(test)]
 mod zobrist_tests;
+mod phase;
 
 use std::sync::Arc;
 
