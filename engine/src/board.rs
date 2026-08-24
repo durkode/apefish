@@ -333,6 +333,10 @@ impl Position {
         self.state.half_move_clock
     }
 
+    pub fn get_zobrist(&self) -> ZobristKey {
+        self.state.zobrist_hash
+    }
+
     pub fn times_position_reached(&self) -> u64 {
         self.zobrists_visited.count(self.state.zobrist_hash)
     }
@@ -393,7 +397,7 @@ impl Position {
             for f in File::iter() {
                 let char = match self.piece_by_square[Square::from_coords(f, r)] {
                     Some(x) => x.to_unicode_char(),
-                    None => Piece::NO_PIECE_CHAR                    
+                    None => Piece::NO_PIECE_CHAR
                 };
                 print!("{char} ");
             }

@@ -12,6 +12,8 @@ pub mod movegen;
 pub mod search;
 mod zobrist;
 mod multiset;
+#[cfg(test)]
+mod zobrist_tests;
 
 use std::sync::Arc;
 
