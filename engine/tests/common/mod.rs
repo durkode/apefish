@@ -18,7 +18,67 @@ use apefish_engine::{Engine, InputMove, Move, PieceKind, Square};
 use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::process::{Command, Stdio};
+
+/// Diagnostic captured when the engine records something as an illegal move
+/// partway through a perft traversal: either `make_move` outright rejects a
+/// move `legal_moves` just offered, or the engine panics internally (e.g. on
+/// a corrupt board state a few plies downstream of an earlier bad move).
+/// Carrying the exact fen/move this happened at is what lets a failure get
+/// reported as a bisectable position instead of a raw, uncaught panic.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct EngineFailure {
+    pub fen: String,
+    pub mv: Option<Move>,
+    pub detail: String,
+}
+
+impl std::fmt::Display for EngineFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.mv {
+            Some(mv) => write!(f, "at fen `{}`, move `{mv}`: {}", self.fen, self.detail),
+            None => write!(f, "at fen `{}`: {}", self.fen, self.detail),
+        }
+    }
+}
+
+fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        format!("engine panicked: {s}")
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        format!("engine panicked: {s}")
+    } else {
+        "engine panicked with a non-string payload".to_string()
+    }
+}
+
+/// `legal_moves()`, but a panic inside it (e.g. from a board left corrupt by
+/// an earlier bad move) is caught and turned into an [`EngineFailure`]
+/// instead of taking the whole test binary down.
+fn checked_legal_moves<E: Engine>(engine: &mut E) -> Result<Vec<Move>, EngineFailure> {
+    let fen = engine.fen();
+    panic::catch_unwind(AssertUnwindSafe(|| engine.legal_moves()))
+        .map_err(|payload| EngineFailure { fen, mv: None, detail: panic_detail(payload) })
+}
+
+/// `make_move()`, but both an `Err` return (the engine offered a move via
+/// `legal_moves` that it then refuses to make - the exact "recorded as an
+/// illegal move" case this module exists to make debuggable) and an internal
+/// panic are caught and turned into an [`EngineFailure`] instead of
+/// propagating.
+fn checked_make_move<E: Engine>(engine: &mut E, mv: Move) -> Result<(), EngineFailure> {
+    let fen = engine.fen();
+    let input = to_input_move(mv);
+    match panic::catch_unwind(AssertUnwindSafe(|| engine.make_move(input))) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
+            Err(EngineFailure { fen, mv: Some(mv), detail: format!("make_move rejected it as illegal: {e:?}") })
+        }
+        Err(payload) => Err(EngineFailure { fen, mv: Some(mv), detail: panic_detail(payload) }),
+    }
+}
 
 /// Resolve a UCI move string (e.g. "e2e4", "e7e8q") against the engine's
 /// current legal moves, to recover the full internal `Move`.
@@ -77,23 +137,77 @@ fn count_leaves<E: Engine>(engine: &mut E, depth: u32) -> u64 {
     nodes
 }
 
+/// Fallible counterpart to [`count_leaves`]: catches both a rejected
+/// `make_move` and an internal engine panic at any depth, surfacing the
+/// exact fen/move where it happened rather than unwinding straight out of
+/// the test.
+fn checked_count_leaves<E: Engine>(engine: &mut E, depth: u32) -> Result<u64, EngineFailure> {
+    if depth == 0 {
+        return Ok(1);
+    }
+    let legal = checked_legal_moves(engine)?;
+    if depth == 1 {
+        return Ok(legal.len() as u64);
+    }
+    let mut nodes = 0;
+    for mv in legal {
+        checked_make_move(engine, mv)?;
+        // Only unmake on success: on failure the position may be left
+        // corrupt by whatever just went wrong (e.g. a change log applied
+        // partway through before the panic), and unmake_move() itself can
+        // then panic on that corrupt state (observed: "Should not be
+        // removing unfound zobrists") - which would blow away the
+        // diagnostic we're about to propagate. Callers abandon this engine
+        // instance on failure anyway (bisect_mismatch resets via
+        // `set_position` before its next attempt), so there's nothing to
+        // balance here.
+        let sub = checked_count_leaves(engine, depth - 1)?;
+        engine.unmake_move();
+        nodes += sub;
+    }
+    Ok(nodes)
+}
+
+/// Fallible counterpart to [`perft`]: used by `assert_perft` so that an
+/// engine failure partway through (illegal move or internal panic) is
+/// reported with the exact fen/move it happened at, instead of panicking the
+/// whole test with no context.
+#[allow(dead_code)]
+pub fn checked_perft<E: Engine>(engine: &mut E, fen: &str, depth: u32) -> Result<u64, EngineFailure> {
+    engine.set_position(Some(fen), &[]);
+    checked_count_leaves(engine, depth)
+}
+
 /// Per-move leaf-node breakdown at the node reached by `prefix`, `depth`
 /// plies deep - i.e. `perft(depth - 1)` from each of that node's legal moves.
+///
+/// Fallible so `bisect_mismatch` can keep narrowing down a divergence even
+/// when the underlying cause is an engine failure (rejected/panicking
+/// `make_move`) rather than a plain node-count mismatch - the `EngineFailure`
+/// carries the exact fen/move that triggered it.
 #[allow(dead_code)]
-pub fn divide<E: Engine>(engine: &mut E, fen: &str, prefix: &[Move], depth: u32) -> (Vec<(Move, u64)>, u64) {
+pub fn divide<E: Engine>(
+    engine: &mut E,
+    fen: &str,
+    prefix: &[Move],
+    depth: u32,
+) -> Result<(Vec<(Move, u64)>, u64), EngineFailure> {
     engine.set_position(Some(fen), prefix);
-    let legal = engine.legal_moves();
+    let legal = checked_legal_moves(engine)?;
     let mut rows = Vec::new();
     let mut total = 0u64;
     for mv in legal {
-        engine.make_move(to_input_move(mv)).expect("legal move rejected by make_move");
-        let count = count_leaves(engine, depth - 1);
+        checked_make_move(engine, mv)?;
+        // See the matching comment in `checked_count_leaves`: don't unmake
+        // on failure, since the position may be corrupt and unmake_move()
+        // can itself panic on that corrupt state.
+        let count = checked_count_leaves(engine, depth - 1)?;
         engine.unmake_move();
         total += count;
         rows.push((mv, count));
     }
     rows.sort_by_key(|(mv, _)| mv.to_string());
-    (rows, total)
+    Ok((rows, total))
 }
 
 /// Locate a `stockfish` binary: `STOCKFISH_BIN` env var, then `stockfish` on
@@ -184,7 +298,17 @@ pub fn bisect_mismatch<E: Engine>(engine: &mut E, fen: &str, mut prefix: Vec<Mov
             if prefix_uci.is_empty() { String::new() } else { format!(", moves: {}", prefix_uci.join(" ")) }
         );
 
-        let (our_rows, our_total) = divide(engine, fen, &prefix, depth);
+        let (our_rows, our_total) = match divide(engine, fen, &prefix, depth) {
+            Ok(v) => v,
+            Err(failure) => {
+                println!(
+                    "bisect: engine failure while dividing this node - {failure}\n\
+                     this is the exact fen/move to dissect; bisection can't narrow any further \
+                     than the point the engine itself broke."
+                );
+                return;
+            }
+        };
         let (sf_rows, sf_total) = stockfish_divide(&sf_bin, fen, &prefix_uci, depth);
 
         let our_map: HashMap<String, u64> = our_rows.iter().map(|(mv, c)| (mv.to_string(), *c)).collect();

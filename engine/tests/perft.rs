@@ -39,23 +39,42 @@
 use apefish_engine::Apefish;
 
 mod common;
-use common::perft;
+use common::checked_perft;
 
 /// On a mismatch, auto-bisects against Stockfish (if installed - see
 /// `common::bisect_mismatch`) before asserting, so the failing test's
 /// captured output already contains the exact node/move that diverges
 /// instead of just the top-level node count.
+///
+/// This also covers the case where the engine doesn't just miscount but
+/// outright records something as an illegal move partway through (a
+/// rejected `make_move`, or an internal panic a few plies downstream of an
+/// earlier bad move): `checked_perft` catches that instead of letting it
+/// panic straight out of the test, so it can still be routed into the same
+/// bisect/dissect flow below rather than just printing a bare panic.
 fn assert_perft(fen: &str, depth: u32, expected: u64) {
     let mut engine = Apefish::new();
-    let actual = perft(&mut engine, fen, depth);
-    if actual != expected {
-        println!("perft mismatch - auto-bisecting against stockfish to find the exact divergence:\n");
-        common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
+    match checked_perft(&mut engine, fen, depth) {
+        Ok(actual) => {
+            if actual != expected {
+                println!("perft mismatch - auto-bisecting against stockfish to find the exact divergence:\n");
+                common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
+            }
+            assert_eq!(
+                actual, expected,
+                "perft({depth}) mismatch for fen `{fen}`: expected {expected}, got {actual}"
+            );
+        }
+        Err(failure) => {
+            println!(
+                "perft({depth}) hit an engine failure partway through - the engine recorded an illegal \
+                 move rather than just miscounting ({failure})\n\
+                 auto-bisecting against stockfish to pin down the exact divergence:\n"
+            );
+            common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
+            panic!("perft({depth}) for fen `{fen}` hit an engine failure: {failure}");
+        }
     }
-    assert_eq!(
-        actual, expected,
-        "perft({depth}) mismatch for fen `{fen}`: expected {expected}, got {actual}"
-    );
 }
 
 /// The six-position "Perft Results" suite: general move generation, blocker
