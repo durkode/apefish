@@ -452,35 +452,21 @@ impl CastlingRights {
         self.rights
     }
 
-    pub fn remove_rights_for_move(&mut self, side: Side, from: Square, piece_kind: PieceKind) {
+    pub fn remove_rights_for_square_touched(&mut self, s: Square) {
         if self.any_rights() {
-            match (side, from, piece_kind) {
-                // White
-                (Side::White, Square::E1, PieceKind::King) => { 
-                    self.remove_rights(CastlingDirection::WK);
-                    self.remove_rights(CastlingDirection::WQ);
-                },
-                (Side::White, Square::A1, PieceKind::Rook) => {
-                    self.remove_rights(CastlingDirection::WQ);
-                },
-                (Side::White, Square::H1, PieceKind::Rook) => {
-                    self.remove_rights(CastlingDirection::WK);
-                },
-                
-                // Black
-                (Side::Black, Square::E8, PieceKind::King) => { 
-                    self.remove_rights(CastlingDirection::BK);
-                    self.remove_rights(CastlingDirection::BQ);
-                },
-                (Side::Black, Square::A8, PieceKind::Rook) => {
-                    self.remove_rights(CastlingDirection::BQ);
-                },
-                (Side::Black, Square::H8, PieceKind::Rook) => {
-                    self.remove_rights(CastlingDirection::BK);
-                },
-                // No match
-                _ => {}
+            let directions: &[CastlingDirection] = match s {
+                Square::A1 => &[CastlingDirection::WQ],
+                Square::E1 => &[CastlingDirection::WQ, CastlingDirection::WK],
+                Square::H1 => &[CastlingDirection::WK],
+                Square::A8 => &[CastlingDirection::BQ],
+                Square::E8 => &[CastlingDirection::BQ, CastlingDirection::BK],
+                Square::H8 => &[CastlingDirection::BK],
+                _ => &[]
+            };
+            for d in directions {
+                self.remove_rights(*d);
             }
+
         }
     }
         

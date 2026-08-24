@@ -373,3 +373,40 @@ mod sedlak_movegen_positions {
         assert_perft("8/8/2k5/5q2/5n2/8/5K2/8 b - - 0 1", 4, 23_527);
     }
 }
+
+/// Regression coverage for a specific engine bug found via code review:
+/// `apply_change_log_to_board` applies a move's change-log entries in the
+/// order they were appended, but a promotion-with-capture appends them in
+/// the opposite relative order to a normal capture (pawn-removal, then
+/// promoted-piece-added, then captured-piece-removed) - so the captured
+/// piece was cleared from the board *after* the promoted piece had already
+/// been placed there, and since `remove_piece` unconditionally clears
+/// `piece_by_square` at that square, it wiped the just-placed promoted piece
+/// back out of the mailbox while its bitboard bit stayed set. That
+/// mailbox/bitboard desync then corrupts every later `legal_moves()` trial
+/// (make+unmake) that touches the same square, cascading through the rest
+/// of the tree - which is why this needs a multi-ply perft, not just a
+/// single-move check, to properly regression-test: depth 1 alone wouldn't
+/// catch the corruption, only depth 2+ (once something is generated *from*
+/// the now-corrupted position) would.
+///
+/// Position: white pawn on b7 can promote by capturing either black rook
+/// (a8 or c8). All three depths verified against Stockfish.
+mod regression_promotion_with_capture {
+    use super::assert_perft;
+
+    const PAWN_CAN_PROMOTE_BY_CAPTURING_EITHER_ROOK: &str = "r1r4k/1P6/8/8/8/8/8/4K3 w - - 0 1";
+
+    #[test]
+    fn depth_1() {
+        assert_perft(PAWN_CAN_PROMOTE_BY_CAPTURING_EITHER_ROOK, 1, 17);
+    }
+    #[test]
+    fn depth_2() {
+        assert_perft(PAWN_CAN_PROMOTE_BY_CAPTURING_EITHER_ROOK, 2, 273);
+    }
+    #[test]
+    fn depth_3() {
+        assert_perft(PAWN_CAN_PROMOTE_BY_CAPTURING_EITHER_ROOK, 3, 3_112);
+    }
+}

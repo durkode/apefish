@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use crate::Side::White;
 use crate::{fen, movegen::MoveGen};
 use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
 use crate::multiset::{MultiSet};
@@ -357,7 +356,8 @@ impl Position {
         // Update castling rights
         // TODO: Only update castling zobrists if there is a change
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
-        self.state.castling.remove_rights_for_move(self.state.active_side, m.from(), m.piece());
+        self.state.castling.remove_rights_for_square_touched(m.from());
+        self.state.castling.remove_rights_for_square_touched(m.to());
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
 
         // Update EP square
