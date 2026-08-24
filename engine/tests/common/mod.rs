@@ -158,6 +158,44 @@ pub fn perft<E: Engine>(engine: &mut E, fen: &str, depth: u32) -> u64 {
     count_leaves(engine, depth)
 }
 
+/// Verifies, for every legal move at every node reachable within `depth`
+/// plies from `fen`, that making the move and then unmaking it restores the
+/// exact `fen()` that was there beforehand - i.e. `unmake_move` is really
+/// the exact inverse of `make_move`, not just "produces the right node
+/// count a few levels up" (which perft alone only checks indirectly, and
+/// only if the corruption happens to affect a count). A state-restoration
+/// bug that leaves some piece of bookkeeping (say, an internal history
+/// stack) off by one without immediately changing which moves are
+/// available at that exact node - as happened with a castling-through-check
+/// rejection leaking a stack push - can otherwise go unnoticed until it
+/// cascades into a wrong count several plies later; this catches it at the
+/// exact node/move where the restoration first goes wrong.
+#[allow(dead_code)]
+pub fn assert_make_unmake_round_trips<E: Engine>(engine: &mut E, fen: &str, depth: u32) {
+    engine.set_position(Some(fen), &[]);
+    round_trip_from_current_position(engine, depth);
+}
+
+fn round_trip_from_current_position<E: Engine>(engine: &mut E, depth: u32) {
+    if depth == 0 {
+        return;
+    }
+    let before = engine.fen();
+    for mv in engine.legal_moves() {
+        engine
+            .make_move(to_input_move(mv))
+            .unwrap_or_else(|e| panic!("`{mv}` from `{before}` rejected by make_move: {e:?}"));
+        round_trip_from_current_position(engine, depth - 1);
+        engine.unmake_move();
+        let after = engine.fen();
+        assert_eq!(
+            after, before,
+            "make_move(`{mv}`) from `{before}` followed by unmake_move did not restore the original fen \
+             (got `{after}`)"
+        );
+    }
+}
+
 fn to_input_move(mv: Move) -> InputMove {
     InputMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() }
 }

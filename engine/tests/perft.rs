@@ -249,6 +249,25 @@ mod sedlak_movegen_positions {
         assert_perft("8/8/1k6/8/2pP4/8/5BK1/8 b - d3 0 1", 6, 824_064);
     }
 
+    /// An en passant capture is illegal if it would expose the king to a
+    /// horizontal (rank) check - removing *both* pawns from the rank at
+    /// once is the one move in chess where the captured piece isn't on the
+    /// destination square, so it's the one case a naive "check the king
+    /// after the capturing piece moves" implementation could miss a pin
+    /// that a normal single-piece move never would. This is arguably the
+    /// single most well-known gotcha in chess move generation - not
+    /// previously covered by this suite's other en passant cases (which
+    /// test the capture-availability window and en passant delivering
+    /// check, not en passant being *pinned*).
+    #[test]
+    fn en_passant_pinned_on_rank_white() {
+        assert_perft("8/8/8/8/k2Pp2Q/8/8/4K3 b - d3 0 1", 5, 122_897);
+    }
+    #[test]
+    fn en_passant_pinned_on_rank_black() {
+        assert_perft("4k3/8/8/K2pP2q/8/8/8/8 w - d6 0 1", 5, 122_897);
+    }
+
     /// An en passant capture can itself deliver check.
     #[test]
     fn en_passant_capture_checks_opponent_white() {
