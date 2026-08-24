@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::Side::White;
 use crate::{fen, movegen::MoveGen};
 use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
 use crate::multiset::{MultiSet};
@@ -20,7 +21,6 @@ pub struct PositionState {
     pub half_move_clock: u8,
     pub full_move_number: u16,
     pub en_passant: Option<Square>,
-    pub next_move: Option<Move>,
     pub zobrist_hash: ZobristKey,
 }
 
@@ -32,40 +32,75 @@ impl PositionState {
             half_move_clock: 0,
             full_move_number: 0,
             en_passant: None,
-            next_move: None,
             zobrist_hash: 0,
         }
     }
 }
 
+type PositionHistory = Stack<PositionState, MAX_MOVES>;
+type AlteredPieceHistory = Stack<AlteredPieces, MAX_MOVES>;
+
 #[derive(Debug, Clone)]
-pub struct PositionHistory {
-    stack_array: [PositionState; MAX_MOVES],
+pub struct Stack<T, const N: usize> {
+    stack_array: [T; N],
     stack_pointer: usize
 }
 
 // Position history is effecitvely a stack of position states.
 // No error checking for out of bounds, assume the caller is tracking.
-impl PositionHistory {
-    pub fn new() -> Self {
+impl<T: Copy, const N: usize> Stack<T, N> {
+    pub fn new(default: T) -> Self {
         Self {
-            stack_array: [PositionState::new(); MAX_MOVES],
+            stack_array: [default; N],
             stack_pointer: 0
         }
     }
+}
 
+impl<T, const N: usize> Stack<T, N> {
     // push to stack
-    pub fn push(&mut self, state: PositionState) {
+    pub fn push(&mut self, state: T) {
         self.stack_pointer += 1;
         self.stack_array[self.stack_pointer] = state;
     }
 
     // pop from stack. Don't actually need to return or delete.
-    pub fn pop(&mut self) -> &PositionState {
+    pub fn pop(&mut self) -> &T {
         self.stack_pointer -= 1;
         &self.stack_array[self.stack_pointer+1]
     }
+
+    pub fn peek(&self) -> &T {
+        &self.stack_array[self.stack_pointer]
+    }
 }
+
+
+// Piece move change log.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PieceChange {
+    pub piece: Piece,
+    pub from: Option<Square>,  // None = the piece is created
+    pub to: Option<Square>,    // None = the piece is removed
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AlteredPieces {
+    pub changes: [PieceChange; 3],
+    pub count: usize,
+}
+
+impl AlteredPieces {
+    pub fn piece_changes(&self) -> &[PieceChange] {
+        &self.changes[0..self.count]
+    }
+
+    pub fn add(&mut self, piece_change: PieceChange) {
+        self.changes[self.count] = piece_change;
+        self.count += 1;
+    }
+}
+
 
 /// A chess position.
 #[derive(Debug, Clone)]
@@ -75,6 +110,7 @@ pub struct Position {
     pub piece_by_square: PerSquare<Option<Piece>>,
     pub state: PositionState,
     pub history: PositionHistory,
+    piece_change_log: AlteredPieceHistory,
     zobrist_randoms: Arc<ZobristRandoms>,
     zobrists_visited: MultiSet<ZobristKey>
 }
@@ -91,7 +127,8 @@ impl Position {
             sides_pieces,
             piece_by_square: piece_list,
             state: PositionState::new(),
-            history: PositionHistory::new(),
+            history: PositionHistory::new(PositionState::new()),
+            piece_change_log: AlteredPieceHistory::new(AlteredPieces::default()),
             zobrist_randoms: zobrists,
             zobrists_visited: MultiSet::new(),
         };
@@ -114,11 +151,10 @@ impl Position {
             half_move_clock: fen_struct.half_move_clock, 
             full_move_number: fen_struct.full_move_number, 
             en_passant: fen_struct.en_passant_square, 
-            next_move: None,
             zobrist_hash: 0u64
         };
         self.initialise_zobrists();
-        self.history = PositionHistory::new();
+        self.history = PositionHistory::new(PositionState::new());
 
         Ok(())
     }
@@ -170,68 +206,150 @@ impl Position {
     // TODO: using Unwrap which will panic on invalid move. Return error instead.
     pub fn make_move(&mut self, mg: &MoveGen, m: Move) -> Result<(), GenericErr> {
         // Check Castling with check (both before, through, after) preconditions.
-        let castling_direction = CastlingDirection::direction(m.from(), m.to());
-        // TODO: it feels weird to treat castling as a separate case, but also it feels easier but more convoluted??
-        // Think about this structure further
+        // let castling_direction = CastlingDirection::direction(m.from(), m.to());
+        // // TODO: it feels weird to treat castling as a separate case, but also it feels easier but more convoluted??
+        // // Think about this structure further
+        // if m.castling() {
+        //     // Assume that Move Generator has already validated castling rights and that squares are clear
+        //     // Need to check that the move is not in or moving through check.
+        //     // 
+        //     for s in castling_direction.unwrap().unattacked_squares_required() {
+        //         if mg.is_attacked(self, *s) {
+        //             return Err(GenericErr::InvalidCastleChecked)
+        //         }
+        //     }
+        // }
+
+        // Put the current move to make on the game state and push to history
+        self.history.push(self.state.clone());
+
+        let mut altered_pieces = AlteredPieces::default();
+
+        // // Remove the moving piece
+        // self.remove_piece(&m.from(), self.piece_by_square[m.from()].unwrap());
+        
+        // // add the piece to the destination square
+        // let captured_piece = self.piece_by_square[m.to()];
+        // if !captured_piece.is_none() {
+        //     self.remove_piece(&m.to(), captured_piece.unwrap());
+        // }
+        // let new_piece = Piece{ side: self.state.active_side, kind: m.promotion().unwrap_or(m.piece())};
+        // self.add_piece(&m.to(), new_piece);
+
+        // // En Passant
+        // if m.en_passant() {
+        //     let ep_square = Square::from_coords(m.to().file(), m.from().rank());
+        //     self.remove_piece(&ep_square, self.piece_by_square[ep_square].unwrap());
+        // }
+
+        // // Castling: move the rook
+        // if m.castling() {
+        //     self.remove_piece(
+        //         &castling_direction.unwrap().rook_from(), 
+        //         self.piece_by_square[castling_direction.unwrap().rook_from()].unwrap()
+        //     );
+        //     self.add_piece(
+        //         &castling_direction.unwrap().rook_to(), 
+        //         Piece{side: self.state.active_side, kind: PieceKind::Rook}
+        //     );
+        // } else if mg.is_attacked(self, self.king_square()) {
+        //     // Oh no, we are in check. Revert everything back and return an error
+        //     self.remove_piece(&m.to(), new_piece);
+        //     self.add_piece(&m.from(), Piece{side: self.state.active_side, kind: m.piece()});
+        //     // Add back the taken piece
+        //     if m.en_passant() {
+        //         self.add_piece(&Square::from_coords(m.to().file(), m.from().rank()), Piece{ side: self.state.active_side.other(), kind: PieceKind::Pawn});
+        //     } else if !captured_piece.is_none() {
+        //         self.add_piece(&m.to(), captured_piece.unwrap());
+        //     }
+
+        //     self.history.pop();
+        //     return Err(IllegalMove)
+        // }
+
+        // Iterate through move types to generate the change log. The order should be:
+        //   - Castling
+        //   - En Passant
+        //   - Promotion
         if m.castling() {
-            // Assume that Move Generator has already validated castling rights and that squares are clear
-            // Need to check that the move is not in or moving through check.
-            // 
+            let castling_direction = CastlingDirection::direction(m.from(), m.to());
             for s in castling_direction.unwrap().unattacked_squares_required() {
                 if mg.is_attacked(self, *s) {
+                    self.history.pop();
                     return Err(GenericErr::InvalidCastleChecked)
                 }
             }
-        }
-
-        // Put the current move to make on the game state and push to history
-        self.state.next_move = Some(m);
-        self.history.push(self.state.clone());
-
-        // Remove the moving piece
-        self.remove_piece(&m.from(), self.piece_by_square[m.from()].unwrap());
-        
-        // add the piece to the destination square
-        let captured_piece = self.piece_by_square[m.to()];
-        if !captured_piece.is_none() {
-            self.remove_piece(&m.to(), captured_piece.unwrap());
-        }
-        let new_piece = Piece{ side: self.state.active_side, kind: m.promotion().unwrap_or(m.piece())};
-        self.add_piece(&m.to(), new_piece);
-
-        // En Passant
-        if m.en_passant() {
-            let ep_square = Square::from_coords(m.to().file(), m.from().rank());
-            self.remove_piece(&ep_square, self.piece_by_square[ep_square].unwrap());
-        }
-
-        // Castling: move the rook
-        if m.castling() {
-            self.remove_piece(
-                &castling_direction.unwrap().rook_from(), 
-                self.piece_by_square[castling_direction.unwrap().rook_from()].unwrap()
-            );
-            self.add_piece(
-                &castling_direction.unwrap().rook_to(), 
-                Piece{side: self.state.active_side, kind: PieceKind::Rook}
-            );
-        } else if mg.is_attacked(self, self.king_square()) {
-            // Oh no, we are in check. Revert everything back and return an error
-            self.remove_piece(&m.to(), new_piece);
-            self.add_piece(&m.from(), Piece{side: self.state.active_side, kind: m.piece()});
-            // Add back the taken piece
-            if m.en_passant() {
-                self.add_piece(&Square::from_coords(m.to().file(), m.from().rank()), Piece{ side: self.state.active_side.other(), kind: PieceKind::Pawn});
-            } else if !captured_piece.is_none() {
-                self.add_piece(&m.to(), captured_piece.unwrap());
+            altered_pieces.add(PieceChange { 
+                piece: Piece{ side: self.state.active_side, kind: PieceKind::King }, 
+                from: Some(m.from()), 
+                to: Some(m.to()) 
+            });
+            altered_pieces.add(PieceChange { 
+                piece: Piece{ side: self.state.active_side, kind: PieceKind::Rook }, 
+                from: Some(castling_direction.unwrap().rook_from()), 
+                to: Some(castling_direction.unwrap().rook_to()) 
+            });
+        } else if m.en_passant() {
+            altered_pieces.add(PieceChange { 
+                piece: Piece{ side: self.state.active_side, kind: PieceKind::Pawn}, 
+                from: Some(m.from()), 
+                to: Some(m.to()), 
+            });
+            altered_pieces.add(PieceChange { 
+                piece: Piece{ side: self.state.active_side.other(), kind: PieceKind::Pawn}, 
+                from: Some(Square::from_coords(m.to().file(), m.from().rank())), 
+                to: None, 
+            });
+        } else if let Some(promotion_kind) = m.promotion() {
+            if let Some(captured) = m.captured() {
+                altered_pieces.add(PieceChange{
+                    piece: Piece{side: self.state.active_side.other(), kind: captured},
+                    from: Some(m.to()),
+                    to: None,
+                });
             }
+            altered_pieces.add(PieceChange{
+                piece: Piece{side: self.state.active_side, kind: PieceKind::Pawn},
+                from: Some(m.from()),
+                to: None,
+            });
+            altered_pieces.add(PieceChange{
+                piece: Piece{side: self.state.active_side, kind: promotion_kind},
+                from: None,
+                to: Some(m.to()),
+            });
+        } else {
+            // Base case for all normal moves (Non castling / EP / Promotion)
+            if let Some(captured) = m.captured() {
+                altered_pieces.add(PieceChange { 
+                    piece: Piece{ side: self.state.active_side.other(), kind: captured }, 
+                    from: Some(m.to()), 
+                    to: None
+                });
+            }
+            altered_pieces.add(PieceChange { 
+                piece: Piece{ side: self.state.active_side, kind: m.piece() }, 
+                from: Some(m.from()), 
+                to: Some(m.to()) 
+            });
+        }
 
+        // Now move the pieces
+        self.apply_change_log_to_board(altered_pieces);
+
+        // If in check, delete change log and return err
+        if mg.is_attacked(self, self.king_square()) {
+            self.reverse_change_log_to_board(altered_pieces);
             self.history.pop();
             return Err(IllegalMove)
         }
 
+        // Move successful
+        self.piece_change_log.push(altered_pieces);
+
         // Update game state
-        self.state.half_move_clock = if m.piece() == PieceKind::Pawn || !captured_piece.is_none() {0} else {self.state.half_move_clock + 1};
+        let reset_half_move_clock = m.piece() == PieceKind::Pawn || !m.captured().is_none();
+        self.state.half_move_clock = if reset_half_move_clock {0} else {self.state.half_move_clock + 1};
         if self.state.active_side == Side::Black {
             self.state.full_move_number += 1;
         }
@@ -241,7 +359,7 @@ impl Position {
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
         self.state.castling.remove_rights_for_move(self.state.active_side, m.from(), m.piece());
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
-        
+
         // Update EP square
         let new_ep_square = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {
             (PieceKind::Pawn, Side::White, Rank::R2, Rank::R4) => Some(Square::from_coords(m.from().file(), Rank::R3)),
@@ -259,7 +377,6 @@ impl Position {
         self.state.active_side = self.state.active_side.other();
         self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
 
-        self.state.next_move = None;
         self.zobrists_visited.add(self.state.zobrist_hash);
 
         Ok(())
@@ -270,34 +387,34 @@ impl Position {
             panic!("Should not be removing unfound zobrists");
         };
 
-        // Note that the zobrist hash is held in the game state, and making moves modifies that.
-        // So, we pop the previous game state from the history, use its "next move" info to undo that move,
-        // and then set the current state to be the popped state.
+        let ap = *self.piece_change_log.pop();
+        self.reverse_change_log_to_board(ap);
 
-        let post_move_state = *self.history.pop();
-        let previous_move = post_move_state.next_move.unwrap();
+        self.state = *self.history.pop();
+    }
 
-        // Add the piece back to the square it moved from. Note the piece sitting on the
-        // destination square is the promoted kind (if any), not the original one, so it
-        // must be removed as that kind or its bitboard keeps a stale bit set.
-        let moved_side = self.state.active_side.other();
-        self.add_piece(&previous_move.from(), Piece { side: moved_side, kind: previous_move.piece() });
-        self.remove_piece(&previous_move.to(), Piece { side: moved_side, kind: previous_move.promotion().unwrap_or(previous_move.piece()) });
-
-        // Now deal with the other pieces
-        if previous_move.castling() {
-            let direction = CastlingDirection::direction(previous_move.from(), previous_move.to()).unwrap();
-            let rook = Piece{kind: PieceKind::Rook, side: self.state.active_side.other()};
-            self.add_piece(&direction.rook_from(), rook);
-            self.remove_piece(&direction.rook_to(), rook);
-        } else if previous_move.en_passant() {
-            let taken_pawn_square = Square::from_coords(previous_move.to().file(), previous_move.from().rank());
-            self.add_piece(&taken_pawn_square, Piece{side: self.state.active_side, kind: PieceKind::Pawn});
-        } else if let Some(captured_piece_kind) = previous_move.captured() {
-            self.add_piece(&previous_move.to(), Piece { side: self.state.active_side, kind: captured_piece_kind });
+    // TODO: Ideally we would just take a reference to AP, but borrow checker isn't liking me right now
+    // Fix this later.
+    fn apply_change_log_to_board(&mut self, altered_pieces: AlteredPieces) {
+        for ap in altered_pieces.piece_changes() {
+            if let Some(from) = ap.from {
+                self.remove_piece(&from, ap.piece);
+            }
+            if let Some(to) = ap.to {
+                self.add_piece(&to, ap.piece);
+            }
         }
+    }
 
-        self.state = post_move_state;
+    fn reverse_change_log_to_board(&mut self, altered_pieces: AlteredPieces) {
+        for ap in altered_pieces.piece_changes().iter().rev() {
+            if let Some(from) = ap.from {
+                self.add_piece(&from, ap.piece);
+            }
+            if let Some(to) = ap.to {
+                self.remove_piece(&to, ap.piece);
+            }
+        }
     }
 
     // Add a piece to a square, assumes square is empty.

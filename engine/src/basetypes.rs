@@ -16,9 +16,10 @@ pub enum GenericErr {
     InvalidCastleChecked,
 }
 
-#[derive(Debug, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
+#[derive(Debug, Default, strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum Side {
+    #[default]
     White = 0,
     Black,
 }
@@ -58,13 +59,14 @@ pub enum DrawReason {
 /// Piece kinds that move by sliding along a ray until blocked.
 /// Piece kinds whose moves are generated from precomputed, per-square lookup tables.
 #[subenum(SlidingPieceKind, IndexedPieceKind)]
-#[derive(strum::Display, Clone, Copy, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
+#[derive(strum::Display, Clone, Copy, Default, PartialEq, Eq, strum::EnumCount, strum::EnumIter)]
 #[repr(u8)]
 pub enum PieceKind {
     Pawn,
     #[subenum(IndexedPieceKind)]
     Knight,
     #[subenum(SlidingPieceKind, IndexedPieceKind)]
+    #[default]
     Bishop,
     #[subenum(SlidingPieceKind, IndexedPieceKind)]
     Rook,
@@ -91,7 +93,7 @@ impl fmt::Debug for SlidingPieceKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Piece {
     pub side: Side,
     pub kind: PieceKind,
