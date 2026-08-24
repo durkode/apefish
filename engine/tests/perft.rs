@@ -57,7 +57,13 @@ fn assert_perft(fen: &str, depth: u32, expected: u64) {
     match checked_perft(&mut engine, fen, depth) {
         Ok(actual) => {
             if actual != expected {
-                println!("perft mismatch - auto-bisecting against stockfish to find the exact divergence:\n");
+                println!(
+                    "\n################################################################\n\
+                     # PERFT MISMATCH: perft({depth}) at fen `{fen}`\n\
+                     # expected {expected}, got {actual}\n\
+                     # auto-bisecting against stockfish below to find the exact divergence...\n\
+                     ################################################################"
+                );
                 common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
             }
             assert_eq!(
@@ -66,10 +72,19 @@ fn assert_perft(fen: &str, depth: u32, expected: u64) {
             );
         }
         Err(failure) => {
+            // Deliberately not printing `failure` here even though we already
+            // have it: `bisect_mismatch` below re-derives (and prints, under
+            // its own "=== BISECT RESULT ===" banner) the same diagnostic
+            // independently against stockfish, so printing it twice would
+            // just be two near-identical blocks of text for the reader to
+            // reconcile. The full detail still ends up in the panic message
+            // at the bottom, which is where `cargo test` will point anyway.
             println!(
-                "perft({depth}) hit an engine failure partway through - the engine recorded an illegal \
-                 move rather than just miscounting ({failure})\n\
-                 auto-bisecting against stockfish to pin down the exact divergence:\n"
+                "\n################################################################\n\
+                 # PERFT FAILURE: perft({depth}) at fen `{fen}`\n\
+                 # the engine recorded an illegal move rather than just miscounting\n\
+                 # auto-bisecting against stockfish below to pin down the exact position...\n\
+                 ################################################################"
             );
             common::bisect_mismatch(&mut engine, fen, Vec::new(), depth);
             panic!("perft({depth}) for fen `{fen}` hit an engine failure: {failure}");
