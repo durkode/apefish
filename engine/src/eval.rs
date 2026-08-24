@@ -1,14 +1,9 @@
 //! Static position evaluation.
 
-use crate::{board::{AlteredPieces, PieceChange, Position}, psqt::{self, TaperedValue}};
+use crate::{board::PieceChange, psqt::{self, TaperedValue}};
 
-/// Centipawn score, from the perspective of the side to move.
-pub struct Score {
-    opening_score: i32,
-    endgame_score: i32
-}
 
-pub fn incremental_eval(old_eval: TaperedValue, pos: &Position, piece_changes: &[PieceChange]) -> TaperedValue {
+pub fn incremental_eval(old_eval: TaperedValue, piece_changes: &[PieceChange]) -> TaperedValue {
     let mut eval = old_eval;
     
     // TODO: incrementally calculate phase

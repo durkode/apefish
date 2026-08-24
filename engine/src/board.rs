@@ -234,7 +234,7 @@ impl Position {
                 self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
 
                 let piece_changes: &[PieceChange] = &[PieceChange{piece: *piece, from: None, to: Some(square)}];
-                piece_value = incremental_eval(piece_value, self, piece_changes);
+                piece_value = incremental_eval(piece_value, piece_changes);
                 phase_score = incremental_phase_score(phase_score, piece_changes);
             }
         }
@@ -368,7 +368,7 @@ impl Position {
 
         // Update incremental tallies
         self.state.phase_score = incremental_phase_score(self.state.phase_score, altered_pieces.piece_changes());
-        self.state.tapered_eval = incremental_eval(self.state.tapered_eval, self, altered_pieces.piece_changes());
+        self.state.tapered_eval = incremental_eval(self.state.tapered_eval, altered_pieces.piece_changes());
 
         // Update game state
         let reset_half_move_clock = m.piece() == PieceKind::Pawn || !m.captured().is_none();

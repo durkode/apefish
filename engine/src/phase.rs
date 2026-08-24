@@ -1,6 +1,6 @@
 use strum::EnumCount;
 
-use crate::{PieceKind, basetypes::PerPiece, board::{AlteredPieces, PieceChange}};
+use crate::{PieceKind, basetypes::PerPiece, board::PieceChange};
 
 pub type PhaseScore = u8;
 type PhaseDelta = i8;
