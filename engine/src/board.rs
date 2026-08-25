@@ -142,6 +142,7 @@ pub struct Position {
     pub state: PositionState,
     pub history: PositionHistory,
     piece_change_log: AlteredPieceHistory,
+    movegen: Arc<MoveGen>,
     zobrist_randoms: Arc<ZobristRandoms>,
     zobrists_visited: MultiSet<ZobristKey>
 }
@@ -149,7 +150,7 @@ pub struct Position {
 impl Position {
 
     /// The standard starting position.
-    pub fn new(zobrists: Arc<ZobristRandoms>) -> Self {
+    pub fn new(zobrists: Arc<ZobristRandoms>, movegen: Arc<MoveGen>) -> Self {
         let pieces = PerSide::new(PerPiece::new(Bitboard::EMPTY));
         let sides_pieces = PerSide::new(Bitboard::EMPTY);
         let piece_list = PerSquare::new(None);
@@ -160,6 +161,7 @@ impl Position {
             state: PositionState::new(),
             history: PositionHistory::new(PositionState::new()),
             piece_change_log: AlteredPieceHistory::new(AlteredPieces::default()),
+            movegen: movegen,
             zobrist_randoms: zobrists,
             zobrists_visited: MultiSet::new(),
         };
@@ -244,41 +246,10 @@ impl Position {
         self.zobrists_visited.add(self.state.zobrist_hash);
     }
 
-    // fn initialise_zobrists(&mut self) {
-    //     self.state.zobrist_hash ^= self.zobrist_randoms.ep_key(self.state.en_passant);
-    //     self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
-    //     self.state.zobrist_hash ^= self.zobrist_randoms.side_key(self.state.active_side);
-
-    //     // Now do the zobrists for all pieces
-    //     for (square, p) in self.piece_by_square.iter() {
-    //         if let Some(Piece{side, kind}) = *p {
-    //             self.state.zobrist_hash ^= self.zobrist_randoms.piece_key(side, kind, square);
-    //         }
-    //     }
-
-    //     self.zobrists_visited.add(self.state.zobrist_hash);
-    // }
-
-    // fn initialise_phase_score(&mut self) {
-    //     let mut phase_score: PhaseScore = 0;
-    //     for
-    // }
-
-    // fn initialise_tapered_eval(&mut self) {
-    //     let mut piece_value = TaperedValue{mg: 0, eg: 0};
-    //     for (square, maybe_piece) in self.piece_by_square.iter() {
-    //         if let Some(piece) = maybe_piece {
-    //             let piece_changes: &[PieceChange] = &[PieceChange{piece: *piece, from: None, to: Some(square)}];
-    //             piece_value = incremental_eval(piece_value, self, piece_changes)
-    //         }
-    //     }
-    //     self.state.tapered_eval = piece_value;
-    // }
-
     // Make the move on the board.
     // Assumes the move is semi-legal. i.e. legal except for if it leaves the king in check, or castles from or through check
     // TODO: using Unwrap which will panic on invalid move. Return error instead.
-    pub fn make_move(&mut self, mg: &MoveGen, m: Move) -> Result<(), GenericErr> {
+    pub fn make_move(&mut self, m: Move) -> Result<(), GenericErr> {
 
         // Put the current move to make on the game state and push to history
         self.history.push(self.state.clone());
@@ -292,7 +263,7 @@ impl Position {
         if m.castling() {
             let castling_direction = CastlingDirection::direction(m.from(), m.to());
             for s in castling_direction.unwrap().unattacked_squares_required() {
-                if mg.is_attacked(self, *s) {
+                if self.movegen.is_attacked(self, *s) {
                     self.history.pop();
                     return Err(GenericErr::InvalidCastleChecked)
                 }
@@ -356,7 +327,7 @@ impl Position {
         self.apply_change_log_to_board(&altered_pieces);
 
         // If in check, delete change log and return err
-        if mg.is_attacked(self, self.king_square()) {
+        if self.movegen.is_attacked(self, self.king_square()) {
             self.reverse_change_log_to_board(&altered_pieces);
             self.history.pop();
             return Err(IllegalMove)
@@ -469,8 +440,8 @@ impl Position {
         self.state.active_side
     }
 
-    pub fn in_check(&self, mg: &MoveGen) -> bool {
-        mg.is_attacked(self, self.king_square())
+    pub fn in_check(&self) -> bool {
+        self.movegen.is_attacked(self, self.king_square())
     }
 
     pub fn half_move_clock(&self) -> u8 {

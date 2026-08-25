@@ -17,12 +17,12 @@ mod phase;
 #[cfg(test)]
 mod tests;
 
-use std::{ops::Index, sync::Arc};
+use std::{sync::Arc};
 
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult}, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, zobrist::ZobristRandoms};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -62,17 +62,22 @@ pub trait Engine {
 #[derive(Debug)]
 pub struct Apefish {
     position: Position,
-    movegen: MoveGen,
-    zobrist_randoms: Arc<ZobristRandoms>
+    movegen: Arc<MoveGen>,
+    zobrist_randoms: Arc<ZobristRandoms>,
+    searcher: Searcher,
 }
 
 impl Apefish {
     pub fn new() -> Self {
         let zobrists = Arc::new(ZobristRandoms::new());
+        let movegen = Arc::new(MoveGen::init());
+        let searcher = Searcher::new(movegen.clone());
+        let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish { 
-            position: Position::new(zobrists.clone()), 
-            movegen:  MoveGen::init(),
+            position: pos, 
+            movegen:  movegen,
             zobrist_randoms: zobrists,
+            searcher: searcher,
         }
     }
 
@@ -87,7 +92,7 @@ impl Apefish {
 
 impl Engine for Apefish {
     fn new_game(&mut self) {
-        self.position = Position::new(self.zobrist_randoms.clone());
+        self.position = Position::new(self.zobrist_randoms.clone(), self.movegen.clone());
     }
 
     fn set_position(&mut self, fen: Option<&str>, moves: &[Move]) {
@@ -95,7 +100,7 @@ impl Engine for Apefish {
             self.position.fen_setup(fen_string).unwrap();
         }
         for m in moves {
-            self.position.make_move(&self.movegen, *m).unwrap();
+            self.position.make_move(*m).unwrap();
         }
     }
 
@@ -105,7 +110,7 @@ impl Engine for Apefish {
 
     fn legal_moves(&mut self) -> Vec<Move> {
         self.movegen.pseudo_legal_moves(&self.position).into_iter().filter(|cm| {
-            match self.position.make_move(&self.movegen, *cm) {
+            match self.position.make_move(*cm) {
                 Ok(_) => {
                     self.position.unmake_move();
                     true
@@ -117,7 +122,7 @@ impl Engine for Apefish {
 
     fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {
         let validated_move = to_make.to_internal_move(&self.position)?;
-        self.position.make_move(&self.movegen, validated_move)?;
+        self.position.make_move(validated_move)?;
         Ok(())
     }
 
@@ -127,7 +132,7 @@ impl Engine for Apefish {
 
     fn game_status(&mut self) -> GameStatus {
         if self.legal_moves().is_empty() {
-             if self.position.in_check(&self.movegen) {
+             if self.position.in_check() {
                 return GameStatus::Won { side: self.position.side_to_move().other(), reason: WinReason::Checkmate };
              }
              return GameStatus::Drawn { reason: DrawReason::Stalemate };
@@ -150,13 +155,14 @@ impl Engine for Apefish {
 
     fn go(&mut self, limits: SearchLimits) -> SearchResult {
         // Return the first legal move just to get it operational before we actually search.
-        let best_move = self.legal_moves().first().cloned();
-        SearchResult { 
-            best_move: best_move, 
-            score: 0, 
-            pv: vec![], 
-            nodes: 1, 
-        }
+        // let best_move = self.legal_moves().first().cloned();
+        // SearchResult { 
+        //     best_move: best_move, 
+        //     score: 0, 
+        //     pv: vec![], 
+        //     nodes: 1, 
+        // }
+        self.searcher.search(&mut self.position, &limits)
     }
 
     fn stop(&mut self) {

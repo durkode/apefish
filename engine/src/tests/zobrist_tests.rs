@@ -21,18 +21,18 @@ use crate::fen;
 use crate::movegen::MoveGen;
 use crate::zobrist::{ZobristKey, ZobristRandoms};
 
-fn new_position() -> (Position, MoveGen) {
-    (Position::new(Arc::new(ZobristRandoms::new())), MoveGen::init())
+fn new_position() -> Position {
+    Position::new(Arc::new(ZobristRandoms::new()), Arc::new(MoveGen::init()))
 }
 
-fn position_from_fen(fen_str: &str) -> (Position, MoveGen) {
-    let (mut position, movegen) = new_position();
+fn position_from_fen(fen_str: &str) -> Position {
+    let mut position = new_position();
     position.fen_setup(fen_str).unwrap();
-    (position, movegen)
+    position
 }
 
 fn hash_of_fen(fen_str: &str) -> ZobristKey {
-    position_from_fen(fen_str).0.get_zobrist()
+    position_from_fen(fen_str).get_zobrist()
 }
 
 /// Resolves a UCI move string ("e2e4", "e7e8q", ...) against the current
@@ -65,11 +65,11 @@ fn assert_hash_matches_fresh_recomputation(position: &Position) {
 
 #[test]
 fn quiet_move_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = new_position();
+    let mut position = new_position();
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "g1f3");
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -79,12 +79,12 @@ fn quiet_move_make_then_unmake_restores_hash() {
 
 #[test]
 fn capture_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("8/8/8/3p4/4P3/8/8/K6k w - - 0 1");
+    let mut position = position_from_fen("8/8/8/3p4/4P3/8/8/K6k w - - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e4d5");
     assert_eq!(m.captured(), Some(PieceKind::Pawn));
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -94,12 +94,12 @@ fn capture_make_then_unmake_restores_hash() {
 
 #[test]
 fn en_passant_capture_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("8/8/8/3pP3/8/8/8/K6k w - d6 0 1");
+    let mut position = position_from_fen("8/8/8/3pP3/8/8/8/K6k w - d6 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e5d6");
     assert!(m.en_passant());
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
     // The captured pawn sat on d5, not on the destination square d6 -
@@ -112,12 +112,12 @@ fn en_passant_capture_make_then_unmake_restores_hash() {
 
 #[test]
 fn white_kingside_castling_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+    let mut position = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e1g1");
     assert!(m.castling());
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -127,12 +127,12 @@ fn white_kingside_castling_make_then_unmake_restores_hash() {
 
 #[test]
 fn white_queenside_castling_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+    let mut position = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e1c1");
     assert!(m.castling());
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -142,12 +142,12 @@ fn white_queenside_castling_make_then_unmake_restores_hash() {
 
 #[test]
 fn black_kingside_castling_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+    let mut position = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e8g8");
     assert!(m.castling());
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -157,12 +157,12 @@ fn black_kingside_castling_make_then_unmake_restores_hash() {
 
 #[test]
 fn black_queenside_castling_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+    let mut position = position_from_fen("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e8c8");
     assert!(m.castling());
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -172,11 +172,11 @@ fn black_queenside_castling_make_then_unmake_restores_hash() {
 
 #[test]
 fn promotion_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("8/P6k/8/8/8/8/7K/8 w - - 0 1");
+    let mut position = position_from_fen("8/P6k/8/8/8/8/7K/8 w - - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "a7a8q");
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
     // The hash must reflect a queen on a8, not a pawn - not just "some
@@ -189,12 +189,12 @@ fn promotion_make_then_unmake_restores_hash() {
 
 #[test]
 fn capture_promotion_make_then_unmake_restores_hash() {
-    let (mut position, movegen) = position_from_fen("1n5k/P7/8/8/8/8/7K/8 w - - 0 1");
+    let mut position = position_from_fen("1n5k/P7/8/8/8/8/7K/8 w - - 0 1");
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "a7b8q");
     assert_eq!(m.captured(), Some(PieceKind::Knight));
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -209,11 +209,11 @@ fn capture_promotion_make_then_unmake_restores_hash() {
 
 #[test]
 fn double_pawn_push_sets_en_passant_hash_and_unmake_clears_it() {
-    let (mut position, movegen) = position_from_fen(fen::STARTING_FEN);
+    let mut position = position_from_fen(fen::STARTING_FEN);
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e2e4");
-    position.make_move(&movegen, m).unwrap();
+    position.make_move(m).unwrap();
     assert_eq!(position.state.en_passant, Some(Square::from_string("e3").unwrap()));
     assert_hash_matches_fresh_recomputation(&position);
 
@@ -247,12 +247,12 @@ fn castling_rights_change_hash_for_otherwise_identical_board() {
 /// on its starting square.
 #[test]
 fn losing_castling_rights_changes_hash_even_when_pieces_return_to_start_squares() {
-    let (mut position, movegen) = position_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+    let mut position = position_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
     let original_hash = position.get_zobrist();
 
     for uci_str in ["h1g1", "e8e7", "g1h1", "e7e8"] {
         let m = uci(&position, uci_str);
-        position.make_move(&movegen, m).unwrap();
+        position.make_move(m).unwrap();
     }
 
     assert_eq!(position.fen(), "4k3/8/8/8/8/8/8/4K2R w - - 4 3");
@@ -265,16 +265,16 @@ fn losing_castling_rights_changes_hash_even_when_pieces_return_to_start_squares(
 /// just the FEN.
 #[test]
 fn different_move_order_reaching_same_position_gives_same_hash() {
-    let (mut pos_a, movegen) = position_from_fen(fen::STARTING_FEN);
+    let mut pos_a = position_from_fen(fen::STARTING_FEN);
     for uci_str in ["g1f3", "g8f6", "b1c3", "b8c6"] {
         let m = uci(&pos_a, uci_str);
-        pos_a.make_move(&movegen, m).unwrap();
+        pos_a.make_move(m).unwrap();
     }
 
-    let (mut pos_b, _) = position_from_fen(fen::STARTING_FEN);
+    let mut pos_b = position_from_fen(fen::STARTING_FEN);
     for uci_str in ["b1c3", "b8c6", "g1f3", "g8f6"] {
         let m = uci(&pos_b, uci_str);
-        pos_b.make_move(&movegen, m).unwrap();
+        pos_b.make_move(m).unwrap();
     }
 
     assert_eq!(pos_a.fen(), pos_b.fen());
@@ -287,13 +287,13 @@ fn different_move_order_reaching_same_position_gives_same_hash() {
 /// current before that ply was played.
 #[test]
 fn multi_ply_sequence_unmake_restores_hash_at_every_step() {
-    let (mut position, movegen) = position_from_fen(fen::STARTING_FEN);
+    let mut position = position_from_fen(fen::STARTING_FEN);
     let moves = ["e2e4", "c7c5", "g1f3", "b8c6", "f1b5", "a7a6", "b5c6", "d7c6"];
 
     let mut hashes = vec![position.get_zobrist()];
     for uci_str in moves {
         let m = uci(&position, uci_str);
-        position.make_move(&movegen, m).unwrap();
+        position.make_move(m).unwrap();
         assert_hash_matches_fresh_recomputation(&position);
         hashes.push(position.get_zobrist());
     }

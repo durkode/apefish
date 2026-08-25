@@ -1,10 +1,12 @@
 //! Search: choosing a move under time/depth constraints.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::basetypes::Move;
 use crate::board::Position;
 use crate::eval::Score;
+use crate::movegen::MoveGen;
 
 /// Constraints on a single search call. All fields optional; interpretation
 /// (e.g. how clock time maps to a time budget) is up to the search implementation.
@@ -27,6 +29,31 @@ pub struct SearchResult {
     pub nodes: u64,
 }
 
-pub fn search(pos: &Position, limits: &SearchLimits) -> SearchResult {
-    unimplemented!()
+#[derive(Debug)]
+pub struct Searcher {
+    movegen: Arc<MoveGen>
+}
+
+impl Searcher {
+
+    pub fn new(movegen: Arc<MoveGen>) -> Self {
+        Searcher { movegen: movegen }
+    }
+
+    pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
+
+        for mc in self.movegen.pseudo_legal_moves(pos) {
+            if let Ok(_) = pos.make_move(mc) {
+                pos.unmake_move();
+                return SearchResult { best_move: Some(mc), score: 0, pv: vec![], nodes: 1 }
+            }
+        }
+
+        SearchResult { 
+            best_move: None, 
+            score: 0, 
+            pv: vec![], 
+            nodes: 1, 
+        }
+    }
 }
