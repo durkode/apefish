@@ -20,63 +20,29 @@ fn main() {
             to: Square::D5,
             promotion: None
         },
-        // InputMove{
-        //     from: Square::D2,
-        //     to: Square::D3,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::E7,
-        //     to: Square::E6,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from:Square::A2,
-        //     to:Square::A3,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::D5,
-        //     to: Square::D4,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::E2,
-        //     to: Square::E4,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::D4,
-        //     to: Square::E3,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::F1,
-        //     to: Square::C4,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::H7,
-        //     to: Square::H6,
-        //     promotion: None
-        // },
-        // InputMove{
-        //     from: Square::E1,
-        //     to: Square::G1,
-        //     promotion: None
-        // },
+        InputMove{
+            from: Square::F1,
+            to: Square::A6,
+            promotion: None
+        },
+        InputMove{
+            from:Square::B7,
+            to: Square::A6,
+            promotion: None
+        }
     ];
 
     for m in moves {
-        println!("Move: {m:?}");
+        af.print_debug_state();
+        println!("\n\nMove: {m:?}");
         af.make_move(m).unwrap();
-        af.print_board();
+        // af.print_board();
     }
 
     af.print_debug_state();
-    for m in af.legal_moves() {
-        println!("{m}");
-    }
+    // for m in af.legal_moves() {
+    //     println!("{m}");
+    // }
 
     let fen_out = af.fen();
     println!("FEN: {fen_out}");

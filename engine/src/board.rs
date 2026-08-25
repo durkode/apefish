@@ -239,6 +239,7 @@ impl Position {
             }
         }
         self.state.tapered_eval = piece_value;
+        self.state.phase_score = phase_score;
 
         self.zobrists_visited.add(self.state.zobrist_hash);
     }
@@ -521,16 +522,19 @@ impl Position {
     }
 
     pub fn print_debug_state(&self) {
-        for (side, per_piece) in self.pieces.iter() {
-            println!("\n============= {side} ==========");
-            for (piece_type, bb) in per_piece.iter() {
-                println!("\n{piece_type}");
-                bb.print(Piece{side, kind: piece_type}.to_unicode_char());
-            }
-        }
+        // for (side, per_piece) in self.pieces.iter() {
+        //     println!("\n============= {side} ==========");
+        //     for (piece_type, bb) in per_piece.iter() {
+        //         println!("\n{piece_type}");
+        //         bb.print(Piece{side, kind: piece_type}.to_unicode_char());
+        //     }
+        // }
 
         println!("\n================ BOARD ============\n");
         self.print_board();
+        let eval = self.state.tapered_eval.evaluate(self.state.phase_score);
+        let phase = self.state.phase_score;
+        println!("Phase Score: {phase}, Eval Score: {eval:+}")
     }
 
     pub fn print_board(&self) {
