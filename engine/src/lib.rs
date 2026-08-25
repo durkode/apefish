@@ -17,12 +17,12 @@ mod phase;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
+use std::{ops::Index, sync::Arc};
 
 pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{GameStatus, WinReason, DrawReason}, fen::to_fen, movegen::MoveGen, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult}, zobrist::ZobristRandoms};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -50,11 +50,11 @@ pub trait Engine {
     /// Whether the game has ended, and how.
     fn game_status(&mut self) -> GameStatus;
 
-    // /// Search from the current position under the given limits and return the result.
-    // fn go(&mut self, limits: SearchLimits) -> SearchResult;
+    /// Search from the current position under the given limits and return the result.
+    fn go(&mut self, limits: SearchLimits) -> SearchResult;
 
-    // /// Ask an in-progress `go` to return its best move so far as soon as possible.
-    // fn stop(&mut self);
+    /// Ask an in-progress `go` to return its best move so far as soon as possible.
+    fn stop(&mut self);
 }
 
 /// The concrete apefish engine implementing [`Engine`].
@@ -148,11 +148,18 @@ impl Engine for Apefish {
         GameStatus::Ongoing
     }
 
-    // fn go(&mut self, limits: SearchLimits) -> SearchResult {
-    //     unimplemented!()
-    // }
+    fn go(&mut self, limits: SearchLimits) -> SearchResult {
+        // Return the first legal move just to get it operational before we actually search.
+        let best_move = self.legal_moves().first().cloned();
+        SearchResult { 
+            best_move: best_move, 
+            score: 0, 
+            pv: vec![], 
+            nodes: 1, 
+        }
+    }
 
-    // fn stop(&mut self) {
-    //     unimplemented!()
-    // }
+    fn stop(&mut self) {
+        // Do nothing currently, but revisit when search is implemented
+    }
 }

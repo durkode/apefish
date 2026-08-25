@@ -14,7 +14,7 @@
 //! position-only delta — reading the table doesn't require knowing the piece
 //! value separately, and it can be summed incrementally as the sole eval term.
 
-use crate::{basetypes::{PerPiece, PerSquare, Piece, PieceKind, Side, Square}, phase::PhaseScore};
+use crate::{basetypes::{PerPiece, PerSquare, Piece, PieceKind, Side, Square}, eval::Score, phase::PhaseScore};
 use strum::EnumCount;
 
 /// Centipawn PST bonus for a single phase.
@@ -33,8 +33,8 @@ impl TaperedValue {
         Self { mg, eg }
     }
 
-    pub fn evaluate(&self, phase: PhaseScore) -> i32 {
-        (self.mg * phase as i32 + self.eg * (24 - phase as i32))/24
+    pub fn evaluate(&self, phase: PhaseScore) -> Score {
+        (self.mg * phase as Score + self.eg * (24 - phase as Score))/24
     }
 }
 
