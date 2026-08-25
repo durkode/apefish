@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::eval::incremental_eval;
+use crate::eval::{Score, incremental_eval};
 use crate::phase::{PhaseScore, incremental_phase_score};
 use crate::psqt::TaperedValue;
 use crate::{fen, movegen::MoveGen};
@@ -454,6 +454,14 @@ impl Position {
 
     pub fn times_position_reached(&self) -> u64 {
         self.zobrists_visited.count(self.state.zobrist_hash)
+    }
+
+    // Evaluate relative to the current side
+    pub fn evaluate(&self) -> Score {
+        match self.state.active_side {
+            Side::White => self.state.tapered_eval.evaluate(self.state.phase_score),
+            Side::Black => -1 * self.state.tapered_eval.evaluate(self.state.phase_score)
+        }
     }
 
     pub fn insufficient_material(&self) -> bool {
