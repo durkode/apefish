@@ -184,27 +184,28 @@ mod forced_mate {
     #[test]
     fn mate_in_1_scholars_mate_finish() {
         assert_mate_in(
-            "r1bqkb1r/pppp2pp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 2 4",
+            "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 2 4",
             Side::White,
             1,
             3,
         );
     }
 
-    /// King-and-queen-vs-king ladder mate, one step out: Qh1-h6+ forces
-    /// ...Kg8 (h7/g7 are both covered by the queen), then Qh6-g7# with the
-    /// White king on f6 covering every other flight square.
-    /// Verified: Stockfish reports `score mate 2`, `pv h1h6 h8g8 h6g7`.
+    /// King-and-queen-vs-king ladder mate, one step out.
+    /// Queen starts on b1, not h1: with the White king on f6, a queen on h1
+    /// would sit on the fully open h-file with Black's king on h8, which is
+    /// an illegal position (the side not to move can't already be in check).
+    /// Verified: Stockfish reports `score mate 2`, `pv b1b7 h8g8 b7g7`.
     #[test]
     fn mate_in_2_queen_ladder() {
-        assert_mate_in("7k/8/5K2/8/8/8/8/7Q w - - 0 1", Side::White, 2, 6);
+        assert_mate_in("7k/8/5K2/8/8/8/8/1Q6 w - - 0 1", Side::White, 2, 6);
     }
 
     /// Same ladder mate, White's king one step further out again.
-    /// Verified: Stockfish reports `score mate 3`, `pv e6f6 h8g8 h1g2 g8h7 g2g7`.
+    /// Verified: Stockfish reports `score mate 3`, `pv e6f6 h8g8 b1g6 g8h8 g6g7`.
     #[test]
     fn mate_in_3_queen_ladder() {
-        assert_mate_in("7k/8/4K3/8/8/8/8/7Q w - - 0 1", Side::White, 3, 8);
+        assert_mate_in("7k/8/4K3/8/8/8/8/1Q6 w - - 0 1", Side::White, 3, 8);
     }
 
     /// Same ladder mate again, White's king a further step out - and now
@@ -213,10 +214,10 @@ mod forced_mate {
     /// `assert_forced_mate` needs to check on for the guarantee to be
     /// meaningful rather than incidental.
     /// Verified: Stockfish reports `score mate 4`,
-    /// `pv d6e6 h8g7 h1h5 g7g8 e6f6 g8f8 h5f7`.
+    /// `pv b1b7 h8g8 d6e6 g8h8 e6f6 h8g8 b7g7`.
     #[test]
     fn mate_in_4_queen_ladder() {
-        assert_mate_in("7k/8/3K4/8/8/8/8/7Q w - - 0 1", Side::White, 4, 10);
+        assert_mate_in("7k/8/3K4/8/8/8/8/1Q6 w - - 0 1", Side::White, 4, 10);
     }
 }
 

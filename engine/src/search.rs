@@ -49,7 +49,7 @@ impl Searcher {
     pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
 
         // Run off constants for now.
-        let depth = 3;
+        let depth = 4;
         let ply = 0;
         let alpha = -MATE; // Starting bounds for best move for current side
         let beta = MATE; // Starting bounds for best move for opponent side
@@ -89,7 +89,8 @@ impl Searcher {
 
         if !any_moves {
             if pos.in_check() {
-                return (-MATE, None)
+                // Need to add ply in order to get the quickest path to checkmate (penalise longer paths)
+                return (-MATE + ply as Score, None)
             } else {
                 return (0, None)
             }
