@@ -16,6 +16,8 @@ mod multiset;
 #[cfg(test)]
 mod zobrist_tests;
 mod phase;
+#[cfg(test)]
+mod incremental_score_tests;
 
 use std::sync::Arc;
 
