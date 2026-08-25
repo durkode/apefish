@@ -7,6 +7,11 @@
 use apefish_engine::{Apefish, Engine, InputMove, Square};
 
 fn main() {
+    if std::env::args().skip(1).any(|a| a == "--uci") {
+        apefish_cli::uci::run();
+        return;
+    }
+
     let mut af = Apefish::new();
 
     let moves: Vec<InputMove> = vec![

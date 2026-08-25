@@ -5,7 +5,8 @@ A chess engine, written in Rust as a Cargo workspace:
 - `engine/` (`apefish-engine`) - the engine itself: board representation, move
   generation, search, eval, exposed through the `Engine` trait.
 - `cli/` (`apefish-cli`) - a terminal front-end for playing against the engine
-  locally.
+  locally, plus a [UCI](https://www.chessprogramming.org/UCI) adapter for use
+  with UCI-compatible GUIs and tools.
 
 ## Build
 
@@ -76,5 +77,73 @@ cargo run -p apefish-cli
 ```
 
 Starts the terminal front-end for playing against the engine locally. This
-is still early/hardcoded (see `cli/src/main.rs`) - a UCI adapter and other
-front-ends are expected to follow, driving the same `Engine` trait.
+is still early/hardcoded (see `cli/src/main.rs`) - other front-ends are
+expected to follow, driving the same `Engine` trait.
+
+### UCI mode
+
+```sh
+cargo build --release -p apefish-cli
+./target/release/apefish --uci
+```
+
+Speaks the [UCI protocol](https://www.chessprogramming.org/UCI) over
+stdin/stdout (see `cli/src/uci.rs`), so any UCI-compatible GUI or tool can
+drive it by being pointed at the built `apefish` binary above. Point tools
+at the binary directly rather than via `cargo run` - most of them invoke the
+engine as a subprocess and don't go through Cargo.
+
+Note: `go`'s search is currently a stub that returns the first legal move
+instantly - the protocol itself is fully wired up ahead of real search
+landing in `apefish-engine`, so games played this way won't be meaningful
+yet, but the UCI handshake and move application can already be exercised
+end-to-end.
+
+`run_apefish_uci.sh` (repo root) wraps the two lines above into one command
+- `./run_apefish_uci.sh` - for tools that just need something to launch
+without having to remember to build `--release` or pass `--uci` themselves.
+It resolves paths relative to its own location, so it can be invoked from
+anywhere. Build the release binary before using it (see above); it doesn't
+build it for you.
+
+### Testing with cutechess-cli
+
+[cutechess-cli](https://github.com/cutechess/cutechess) runs UCI engines
+against each other from the command line, useful for sanity-checking the
+UCI adapter or running test matches. Install it (package manager, or build
+from source), then:
+
+```sh
+cutechess-cli \
+  -engine cmd=./run_apefish_uci.sh name=apefish \
+  -engine cmd=./run_apefish_uci.sh name=apefish-2 \
+  -each proto=uci tc=40/60 \
+  -rounds 1
+```
+
+This plays apefish against a second copy of itself. Swap the second
+`-engine` line for another UCI engine's binary to test against something
+else instead, e.g. Stockfish:
+
+```sh
+cutechess-cli \
+  -engine cmd=./run_apefish_uci.sh name=apefish \
+  -engine cmd=stockfish name=stockfish \
+  -each proto=uci tc=40/60 \
+  -rounds 1
+```
+
+### Playing against a human with Cute Chess
+
+[Cute Chess](https://cutechess.com/) is the GUI counterpart to
+`cutechess-cli`, for playing interactive games rather than running
+automated matches:
+
+1. `cargo build --release -p apefish-cli`
+2. In Cute Chess: Tools → Settings → Engines → Add, then point it at
+   `run_apefish_uci.sh` (repo root) with protocol "UCI" (name it e.g.
+   `apefish`). The wrapper script already passes `--uci` for you, so unlike
+   pointing Cute Chess straight at the `apefish` binary, no Arguments need
+   to be set.
+3. Game → New Game, set one side to "Human" and the other to the `apefish`
+   engine, then play.
