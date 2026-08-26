@@ -258,6 +258,10 @@ impl Move {
         UnvalidatedMove { from: self.from, to: self.to, promotion: self.promotion }
     }
 
+    pub fn equivalent_to(&self, unvalidated: UnvalidatedMove) -> bool {
+        self.from() == unvalidated.from && self.to() == unvalidated.to && self.promotion() == unvalidated.promotion
+    }
+
     pub fn from(&self) -> Square {self.from}
     pub fn to(&self) -> Square {self.to}
     pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
@@ -291,22 +295,6 @@ pub struct UnvalidatedMove {
     pub promotion: Option<PieceKind>
 }
 
-impl UnvalidatedMove {
-    // Take an move from a client, combine it with the position, to create an internal move.
-    // Note, this assumes that the move is valid. If it is not valid, the internal move will be gibberish.
-    pub fn to_internal_move(&self, pos: &Position) -> Result<Move, GenericErr> {
-    
-        let Some(from_piece) = pos.piece_by_square[self.from] else { return Err(GenericErr::InvalidMove)};
-        let to_piece = pos.piece_by_square[self.to];
-        let captured = pos.piece_by_square[self.to].map(|x| x.kind);
-        let en_passant = from_piece.kind == PieceKind::Pawn && to_piece.is_none() && self.from.file() != self.to.file();
-        Ok(Move {
-            from: self.from,
-            to: self.to,
-            promotion: self.promotion,
-        })
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
 pub enum CastlingDirection {

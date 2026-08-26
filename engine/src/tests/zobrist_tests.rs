@@ -50,7 +50,7 @@ fn uci(position: &Position, s: &str) -> Move {
         'n' => PieceKind::Knight,
         _ => panic!("bad promotion char in `{s}`"),
     });
-    UnvalidatedMove { from, to, promotion }.to_internal_move(position).unwrap_or_else(|_| panic!("`{s}` not resolvable against current board"))
+    position.validate_move(UnvalidatedMove { from, to, promotion }).unwrap_or_else(|_| panic!("`{s}` not resolvable against current board"))
 }
 
 /// Asserts the position's incrementally-maintained hash matches a hash

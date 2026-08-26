@@ -121,7 +121,7 @@ impl Engine for Apefish {
     }
 
     fn make_move(&mut self, to_make: UnvalidatedMove) -> Result<(), GenericErr> {
-        let validated_move = to_make.to_internal_move(&self.position)?;
+        let validated_move = self.position.validate_move(to_make)?;
         self.position.make_move(validated_move)?;
         Ok(())
     }

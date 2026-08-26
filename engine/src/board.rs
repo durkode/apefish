@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::UnvalidatedMove;
 use crate::eval::{Score, incremental_eval};
 use crate::phase::{PhaseScore, incremental_phase_score};
 use crate::psqt::TaperedValue;
@@ -244,6 +245,16 @@ impl Position {
         self.state.phase_score = phase_score;
 
         self.zobrists_visited.add(self.state.zobrist_hash);
+    }
+
+    // Takes an unvalidated move and checks it is pseudo legal
+    pub fn validate_move(&self, unvalidated: UnvalidatedMove) -> Result<Move, GenericErr> {
+        for plm in self.movegen.pseudo_legal_moves(self) {
+            if plm.equivalent_to(unvalidated) {
+                return Ok(plm)
+            }
+        }
+        Err(GenericErr::InvalidMove)
     }
 
     // Make the move on the board.
