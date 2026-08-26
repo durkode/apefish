@@ -23,10 +23,10 @@ pub fn incremental_phase_score(old_score: PhaseScore, piece_changes: &[PieceChan
     let mut delta: PhaseDelta = 0;
     
     for ap in piece_changes {
-        if !ap.from.is_none() {
+        if ap.from.is_some() {
             delta -= FRUIT_PHASE_DELTA[ap.piece.kind];
         }
-        if !ap.to.is_none() {
+        if ap.to.is_some() {
             delta += FRUIT_PHASE_DELTA[ap.piece.kind];
         }
     } 

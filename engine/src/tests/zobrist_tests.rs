@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::basetypes::{InputMove, Move, PieceKind, Square};
+use crate::basetypes::{UnvalidatedMove, Move, PieceKind, Square};
 use crate::board::Position;
 use crate::fen;
 use crate::movegen::MoveGen;
@@ -50,7 +50,7 @@ fn uci(position: &Position, s: &str) -> Move {
         'n' => PieceKind::Knight,
         _ => panic!("bad promotion char in `{s}`"),
     });
-    InputMove { from, to, promotion }.to_internal_move(position).unwrap_or_else(|_| panic!("`{s}` not resolvable against current board"))
+    UnvalidatedMove { from, to, promotion }.to_internal_move(position).unwrap_or_else(|_| panic!("`{s}` not resolvable against current board"))
 }
 
 /// Asserts the position's incrementally-maintained hash matches a hash
@@ -83,7 +83,6 @@ fn capture_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e4d5");
-    assert_eq!(m.captured(), Some(PieceKind::Pawn));
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -98,7 +97,6 @@ fn en_passant_capture_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e5d6");
-    assert!(m.en_passant());
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -116,7 +114,6 @@ fn white_kingside_castling_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e1g1");
-    assert!(m.castling());
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -131,7 +128,6 @@ fn white_queenside_castling_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e1c1");
-    assert!(m.castling());
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -146,7 +142,6 @@ fn black_kingside_castling_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e8g8");
-    assert!(m.castling());
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -161,7 +156,6 @@ fn black_queenside_castling_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "e8c8");
-    assert!(m.castling());
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);
@@ -193,7 +187,6 @@ fn capture_promotion_make_then_unmake_restores_hash() {
     let original_hash = position.get_zobrist();
 
     let m = uci(&position, "a7b8q");
-    assert_eq!(m.captured(), Some(PieceKind::Knight));
     position.make_move(m).unwrap();
     assert_ne!(position.get_zobrist(), original_hash);
     assert_hash_matches_fresh_recomputation(&position);

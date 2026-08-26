@@ -255,12 +255,20 @@ impl Position {
         self.history.push(self.state.clone());
         let mut altered_pieces = AlteredPieces::default();
 
+        let from_piece = self.piece_by_square[m.from()].unwrap();
+        let is_en_passant = from_piece.kind == PieceKind::Pawn && self.state.en_passant == Some(m.to());
+        let captured_kind = match is_en_passant {
+            true => Some(PieceKind::Pawn),
+            false => self.piece_by_square[m.to()].map(|x| Some(x.kind)).unwrap_or(None)
+        };
+
         // Iterate through move types to generate the change log. The order should be:
         //   - Castling
         //   - En Passant
         //   - Promotion
         // Note: the order that board changes are added to altered_pieces matters to avoid corruption!!
-        if m.castling() {
+        if from_piece.kind == PieceKind::King && m.from().file().distance(m.to().file()) > 1 {
+            // Castling
             let castling_direction = CastlingDirection::direction(m.from(), m.to());
             for s in castling_direction.unwrap().unattacked_squares_required() {
                 if self.movegen.is_attacked(self, *s) {
@@ -278,7 +286,7 @@ impl Position {
                 from: Some(castling_direction.unwrap().rook_from()), 
                 to: Some(castling_direction.unwrap().rook_to()) 
             });
-        } else if m.en_passant() {
+        } else if is_en_passant {
             altered_pieces.add(PieceChange { 
                 piece: Piece{ side: self.state.active_side, kind: PieceKind::Pawn}, 
                 from: Some(m.from()), 
@@ -290,7 +298,7 @@ impl Position {
                 to: None, 
             });
         } else if let Some(promotion_kind) = m.promotion() {
-            if let Some(captured) = m.captured() {
+            if let Some(captured) = captured_kind {
                 altered_pieces.add(PieceChange{
                     piece: Piece{side: self.state.active_side.other(), kind: captured},
                     from: Some(m.to()),
@@ -309,7 +317,7 @@ impl Position {
             });
         } else {
             // Base case for all normal moves (Non castling / EP / Promotion)
-            if let Some(captured) = m.captured() {
+            if let Some(captured) = captured_kind {
                 altered_pieces.add(PieceChange { 
                     piece: Piece{ side: self.state.active_side.other(), kind: captured }, 
                     from: Some(m.to()), 
@@ -317,7 +325,7 @@ impl Position {
                 });
             }
             altered_pieces.add(PieceChange { 
-                piece: Piece{ side: self.state.active_side, kind: m.piece() }, 
+                piece: Piece{ side: self.state.active_side, kind: from_piece.kind }, 
                 from: Some(m.from()), 
                 to: Some(m.to()) 
             });
@@ -343,8 +351,7 @@ impl Position {
         self.state.tapered_eval = incremental_eval(self.state.tapered_eval, altered_pieces.piece_changes());
 
         // Update game state
-        let reset_half_move_clock = m.piece() == PieceKind::Pawn || !m.captured().is_none();
-        self.state.half_move_clock = if reset_half_move_clock {0} else {self.state.half_move_clock + 1};
+        self.state.half_move_clock = if from_piece.kind == PieceKind::Pawn || captured_kind.is_some() {0} else {self.state.half_move_clock + 1};
         if self.state.active_side == Side::Black {
             self.state.full_move_number += 1;
         }
@@ -357,7 +364,7 @@ impl Position {
         self.state.zobrist_hash ^= self.zobrist_randoms.castling_key(self.state.castling.rights_u8());
 
         // Update EP square
-        let new_ep_square = match (m.piece(), self.state.active_side, m.from().rank(), m.to().rank()) {
+        let new_ep_square = match (from_piece.kind, self.state.active_side, m.from().rank(), m.to().rank()) {
             (PieceKind::Pawn, Side::White, Rank::R2, Rank::R4) => Some(Square::from_coords(m.from().file(), Rank::R3)),
             (PieceKind::Pawn, Side::Black, Rank::R7, Rank::R5) => Some(Square::from_coords(m.from().file(), Rank::R6)),
             _ => None

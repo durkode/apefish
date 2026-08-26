@@ -28,7 +28,7 @@
 //! behaviour disagrees with the verified expectation.
 
 use apefish_engine::basetypes::{DrawReason, GameStatus, WinReason};
-use apefish_engine::{Apefish, Engine, InputMove, Side};
+use apefish_engine::{Apefish, Engine, UnvalidatedMove, Side};
 
 mod common;
 use common::parse_uci_move;
@@ -41,7 +41,7 @@ fn play(engine: &mut Apefish, moves: &[&str]) {
     for uci in moves {
         let mv = parse_uci_move(engine, uci);
         engine
-            .make_move(InputMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() })
+            .make_move(UnvalidatedMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() })
             .unwrap_or_else(|_| panic!("`{uci}` rejected by make_move"));
     }
 }

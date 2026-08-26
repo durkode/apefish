@@ -14,7 +14,7 @@
 //! `common/mod.rs` (rather than `common.rs`) is deliberate: it keeps cargo
 //! from treating this as its own top-level integration test binary.
 
-use apefish_engine::{Engine, InputMove, Move, PieceKind, Square};
+use apefish_engine::{Engine, UnvalidatedMove, Move, PieceKind, Square};
 use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -196,8 +196,8 @@ fn round_trip_from_current_position<E: Engine>(engine: &mut E, depth: u32) {
     }
 }
 
-fn to_input_move(mv: Move) -> InputMove {
-    InputMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() }
+fn to_input_move(mv: Move) -> UnvalidatedMove {
+    UnvalidatedMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() }
 }
 
 /// Leaf node count `depth` plies below the engine's current position, using

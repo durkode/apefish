@@ -19,7 +19,7 @@ mod tests;
 
 use std::{sync::Arc};
 
-pub use basetypes::{GenericErr, InputMove, Move, Piece, PieceKind, Side, Square};
+pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
 use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, zobrist::ZobristRandoms};
@@ -42,7 +42,7 @@ pub trait Engine {
     fn legal_moves(&mut self) -> Vec<Move>;
 
     // Make move
-    fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr>;
+    fn make_move(&mut self, to_make: UnvalidatedMove) -> Result<(), GenericErr>;
 
     /// Undo the most recent `make_move`, restoring the prior position exactly.
     fn unmake_move(&mut self);
@@ -120,7 +120,7 @@ impl Engine for Apefish {
         }).collect()
     }
 
-    fn make_move(&mut self, to_make: InputMove) -> Result<(), GenericErr> {
+    fn make_move(&mut self, to_make: UnvalidatedMove) -> Result<(), GenericErr> {
         let validated_move = to_make.to_internal_move(&self.position)?;
         self.position.make_move(validated_move)?;
         Ok(())

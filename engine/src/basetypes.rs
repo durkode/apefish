@@ -202,6 +202,10 @@ impl File {
         self as usize
     }
 
+    pub fn distance(self, other: File) -> u8 {
+        (self.as_num() as i8).abs_diff(other.as_num() as i8)
+    }
+
     pub fn iter() -> FileIter {
         <File as IntoEnumIterator>::iter()
     }
@@ -237,11 +241,7 @@ pub struct Move {
     // or a u16 (with minimal data like stockfish). For simplicity sake we will now just use a struct, but with plan to refactor later.
     from: Square,
     to: Square,
-    piece_kind: PieceKind,
     promotion: Option<PieceKind>,
-    captured: Option<PieceKind>,
-    castling: bool,
-    en_passant: bool,
 }
 
 impl Move {
@@ -250,21 +250,17 @@ impl Move {
                promotion: Option<PieceKind>, captured: Option<PieceKind>, 
                castling: bool, en_passant: bool) -> Move {
         
-        Move { from, to, piece_kind, promotion, captured, castling, en_passant }
+        Move { from, to, promotion }
 
     }
 
-    pub fn to_input_move(&self) -> InputMove {
-        InputMove { from: self.from, to: self.to, promotion: self.promotion }
+    pub fn to_input_move(&self) -> UnvalidatedMove {
+        UnvalidatedMove { from: self.from, to: self.to, promotion: self.promotion }
     }
 
     pub fn from(&self) -> Square {self.from}
     pub fn to(&self) -> Square {self.to}
-    pub fn piece(&self) -> PieceKind {self.piece_kind}
     pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
-    pub fn captured(&self) -> Option<PieceKind> {self.captured}
-    pub fn castling(&self) -> bool {self.castling}
-    pub fn en_passant(&self) -> bool {self.en_passant}
 }
 
 impl fmt::Display for Move {
@@ -286,14 +282,16 @@ impl fmt::Display for Move {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct InputMove {
-    // A move input from a user of the engine.
+// An unvalidated input move from the user
+// Potentially we can just use "Move", but felt nicer to encode in the 
+// type system so it is clear when dealing with each
+pub struct UnvalidatedMove {
     pub from: Square,
     pub to: Square,
     pub promotion: Option<PieceKind>
 }
 
-impl InputMove {
+impl UnvalidatedMove {
     // Take an move from a client, combine it with the position, to create an internal move.
     // Note, this assumes that the move is valid. If it is not valid, the internal move will be gibberish.
     pub fn to_internal_move(&self, pos: &Position) -> Result<Move, GenericErr> {
@@ -305,14 +303,7 @@ impl InputMove {
         Ok(Move {
             from: self.from,
             to: self.to,
-            piece_kind: from_piece.kind,
             promotion: self.promotion,
-            captured: captured,
-            castling: match from_piece.kind {
-                PieceKind::King => self.from.file().as_num().abs_diff(self.to.file().as_num()) == 2,
-                _ => false,
-            },
-            en_passant,
         })
     }
 }

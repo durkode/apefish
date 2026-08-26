@@ -13,7 +13,7 @@
 //! (`position fen ... moves ... / d`, reading its `Fen:` line).
 
 use apefish_engine::basetypes::GameStatus;
-use apefish_engine::{Apefish, Engine, InputMove};
+use apefish_engine::{Apefish, Engine, UnvalidatedMove};
 
 mod common;
 use common::parse_uci_move;
@@ -26,7 +26,7 @@ fn play(engine: &mut Apefish, moves: &[&str]) {
     for uci in moves {
         let mv = parse_uci_move(engine, uci);
         engine
-            .make_move(InputMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() })
+            .make_move(UnvalidatedMove { from: mv.from(), to: mv.to(), promotion: mv.promotion() })
             .unwrap_or_else(|_| panic!("`{uci}` rejected by make_move"));
     }
 }

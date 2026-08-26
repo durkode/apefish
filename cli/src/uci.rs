@@ -7,7 +7,7 @@ use std::io::{self, BufRead, Write};
 use std::time::Duration;
 
 use apefish_engine::search::SearchLimits;
-use apefish_engine::{Apefish, Engine, InputMove, PieceKind, Square};
+use apefish_engine::{Apefish, Engine, UnvalidatedMove, PieceKind, Square};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CommandOutcome {
@@ -16,7 +16,7 @@ pub enum CommandOutcome {
 }
 
 /// Parse a UCI long-algebraic move (e.g. "e2e4", "e7e8q") into an [`InputMove`].
-pub fn parse_uci_move(s: &str) -> Option<InputMove> {
+pub fn parse_uci_move(s: &str) -> Option<UnvalidatedMove> {
     if s.len() != 4 && s.len() != 5 {
         return None;
     }
@@ -30,7 +30,7 @@ pub fn parse_uci_move(s: &str) -> Option<InputMove> {
         Some(b'n') => Some(PieceKind::Knight),
         Some(_) => return None,
     };
-    Some(InputMove { from, to, promotion })
+    Some(UnvalidatedMove { from, to, promotion })
 }
 
 /// Parse the argument tail of a `go` command into [`SearchLimits`].

@@ -4,7 +4,7 @@
 
 // use apefish_engine::{Apefish, Move};
 
-use apefish_engine::{Apefish, Engine, InputMove, Square};
+use apefish_engine::{Apefish, Engine, UnvalidatedMove, Square};
 
 fn main() {
     if std::env::args().skip(1).any(|a| a == "--uci") {
@@ -14,23 +14,23 @@ fn main() {
 
     let mut af = Apefish::new();
 
-    let moves: Vec<InputMove> = vec![
-        InputMove{
+    let moves: Vec<UnvalidatedMove> = vec![
+        UnvalidatedMove{
             from: Square::E2,
             to: Square::E4,
             promotion: None
         },
-        InputMove{
+        UnvalidatedMove{
             from: Square::D7,
             to: Square::D5,
             promotion: None
         },
-        InputMove{
+        UnvalidatedMove{
             from: Square::F1,
             to: Square::A6,
             promotion: None
         },
-        InputMove{
+        UnvalidatedMove{
             from:Square::B7,
             to: Square::A6,
             promotion: None
