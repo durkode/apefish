@@ -234,40 +234,89 @@ impl Rank {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Move {
-    // Internal representation of a move
-    // TODO: For performance reasons, Move should really be compressed into either a u64 (with all data, like Rustic)
-    // or a u16 (with minimal data like stockfish). For simplicity sake we will now just use a struct, but with plan to refactor later.
-    from: Square,
-    to: Square,
-    promotion: Option<PieceKind>,
-}
+// A chess move, packed into a single `u16`
+//
+// Bit layout (bit 0 = least-significant bit of the `u16`):
+//   - 0..5 from square
+//   - 6..11 to square
+//   - 12..14 promotion piece
+// Future optimisation idea: Use the spare bit as a "special move" flag
+// to alert to either EP or castling rather than inferring on make_move()
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct Move(u16);
 
 impl Move {
 
+    const SQUARE_BITS: u16 = 6;
+    const SQUARE_MASK: u16 = 0b0011_1111;
+    const TO_SHIFT: u16 = Self::SQUARE_BITS;
+    const PROMOTION_SHIFT: u16 = Self::SQUARE_BITS * 2;
+    // Mask that isolates the 3-bit promotion field once shifted down to bit 0.
+    const PROMOTION_MASK: u16 = 0b111;
+
     pub fn new(from: Square, to: Square, promotion: Option<PieceKind>) -> Move {
-        Move { from, to, promotion }
+        debug_assert!(
+            matches!(promotion, None | Some(PieceKind::Knight) | Some(PieceKind::Bishop) | Some(PieceKind::Rook) | Some(PieceKind::Queen)),
+            "promotion must be None or one of Knight/Bishop/Rook/Queen, got {promotion:?}"
+        );
+
+        let promotion_bits: u16 = match promotion {
+            None => 0,
+            Some(kind) => kind as u16,
+        };
+
+        let bits = (from as u16)
+            | (to as u16) << Self::TO_SHIFT
+            | promotion_bits << Self::PROMOTION_SHIFT;
+
+        Move(bits)
     }
 
     pub fn to_input_move(&self) -> UnvalidatedMove {
-        UnvalidatedMove { from: self.from, to: self.to, promotion: self.promotion }
+        UnvalidatedMove { from: self.from(), to: self.to(), promotion: self.promotion() }
     }
 
     pub fn equivalent_to(&self, unvalidated: UnvalidatedMove) -> bool {
         self.from() == unvalidated.from && self.to() == unvalidated.to && self.promotion() == unvalidated.promotion
     }
 
-    pub fn from(&self) -> Square {self.from}
-    pub fn to(&self) -> Square {self.to}
-    pub fn promotion(&self) -> Option<PieceKind> {self.promotion}
+    pub fn from(&self) -> Square {
+        // Bits 0-5. Masking to 6 bits is in 0..=63
+        let bits = (self.0 & Self::SQUARE_MASK) as u8;
+        unsafe { std::mem::transmute::<u8, Square>(bits) }
+    }
+
+    pub fn to(&self) -> Square {
+        // Bits 6-11
+        let bits = ((self.0 >> Self::TO_SHIFT) & Self::SQUARE_MASK) as u8;
+        unsafe { std::mem::transmute::<u8, Square>(bits) }
+    }
+
+    pub fn promotion(&self) -> Option<PieceKind> {
+        // Bits 12-14
+        let bits = (self.0 >> Self::PROMOTION_SHIFT) & Self::PROMOTION_MASK;
+        match bits {
+            0 => None,
+            kind_bits => Some(unsafe { std::mem::transmute::<u8, PieceKind>(kind_bits as u8) }),
+        }
+    }
+}
+
+impl fmt::Debug for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Move")
+            .field("from", &self.from())
+            .field("to", &self.to())
+            .field("promotion", &self.promotion())
+            .finish()
+    }
 }
 
 impl fmt::Display for Move {
     /// UCI-style notation, e.g. "e2e4" or "e7e8q" for a promotion.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}{:?}", self.from, self.to)?;
-        if let Some(promotion) = self.promotion {
+        write!(f, "{:?}{:?}", self.from(), self.to())?;
+        if let Some(promotion) = self.promotion() {
             let promo_char = match promotion {
                 PieceKind::Queen => 'q',
                 PieceKind::Rook => 'r',
