@@ -14,7 +14,7 @@
 //! position-only delta — reading the table doesn't require knowing the piece
 //! value separately, and it can be summed incrementally as the sole eval term.
 
-use crate::{basetypes::{PerPiece, PerSquare, Piece, PieceKind, Side, Square}, eval::Score, phase::PhaseScore};
+use crate::{basetypes::{PerPiece, PerSquare, Piece, PieceKind, Score, Side, Square}, phase::PhaseScore};
 use strum::EnumCount;
 
 /// Centipawn PST bonus for a single phase.

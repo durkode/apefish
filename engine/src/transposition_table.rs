@@ -1,7 +1,5 @@
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-use crate::basetypes::Move;
-
-use crate::eval::Score;
+use crate::basetypes::{MATE_BOUND, Move, Score};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ScoreBound {
@@ -29,7 +27,7 @@ struct TTEntry {
 }
 
 #[derive(Copy, Clone, Debug)]
-struct TTHit {
+pub struct TTHit {
     pub mv: Move,
     pub score: Score,
     pub depth: u8,
@@ -66,7 +64,7 @@ impl TTHit {
             mv: Move::from_bits(bits as u16), 
             score: ((bits >> 16) & 0xffff) as Score, 
             depth: ((bits >> 32) & 0xff) as u8, 
-            bound: ScoreBound::from_bits((bits >> 40) & 0x08).unwrap(), 
+            bound: ScoreBound::from_bits((bits >> 40) & 0x03).unwrap(), 
             search_iteration: (bits >> 42) as u8 & SEARCH_ITERATION_NUM_MASK 
         }
     }
@@ -108,13 +106,70 @@ impl TranspositionTable {
     }
 
     // Attempt to find an entry in the TT
-    // 
     pub fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {
-        None
+        let entry = &self.entries[self.index(zobrist)];
+        let key = entry.key.load(Ordering::Relaxed);
+        let data = entry.data.load(Ordering::Relaxed);
+        if key ^ data != zobrist {
+            return None;
+        }
+
+        // TODO: Investigate unmarshalling only needed fields, might be quicker than the whole thing.
+        let mut hit = TTHit::unmarshall(data);
+        // Take the ply out of the score
+        // TODO: move this to a common function w/ eval and store.
+        if hit.score >= MATE_BOUND {
+            hit.score -= ply as Score;
+        } else if hit.score <= -MATE_BOUND {
+            hit.score += ply as Score;
+        }
+
+        Some(hit)
     }
 
     pub fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {
+        let entry = &self.entries[self.index(zobrist)];
+        let old_key = entry.key.load(Ordering::Relaxed);
+        let old_data = entry.data.load(Ordering::Relaxed);
+        // Check if the retrieved data matches the current position
+        let table_hit_matches_position = old_key ^ old_data == zobrist;
 
+        // Only replace if newer search or greater depth at same search
+        let replace_slot = {
+            if old_data == 0 {
+                true
+            } else {
+                let old_hit = TTHit::unmarshall(old_data);
+                // Cast depth to i32 to deal with overflow
+                // TODO: make search_iteration nonAtomic, as likely killing performance
+                old_hit.search_iteration != self.search_iteration.load(Ordering::Relaxed) || depth as i32 + 2 > old_hit.depth as i32
+            }
+        };
+        if !replace_slot {
+            return;
+        }
+
+        // TODO: Future search enhancements may store bounds in TT without providing a move. Likely will need to modify the signature to allow None Move
+        // and if analysing the same position, use the found move instead.
+
+        //TODO: as with fetch, factor out the mate bound + ply logic into common function
+        let score = if score >= MATE_BOUND {
+            score + ply
+        } else if score <= -MATE_BOUND {
+            score - ply
+        } else {
+            score
+        };
+
+        let data = TTHit::marshall(&TTHit { 
+            mv, 
+            score, 
+            depth, 
+            bound, 
+            search_iteration: self.search_iteration.load(Ordering::Relaxed) 
+        });
+        entry.key.store(zobrist ^ data, Ordering::Relaxed);
+        entry.data.store(data, Ordering::Relaxed);
     }
 
 }

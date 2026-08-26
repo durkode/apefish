@@ -72,7 +72,7 @@ impl Apefish {
     pub fn new() -> Self {
         let zobrists = Arc::new(ZobristRandoms::new());
         let movegen = Arc::new(MoveGen::init());
-        let tt: Arc<TranspositionTable> = Arc::new(TranspositionTable::new(512));
+        let tt: Arc<TranspositionTable> = Arc::new(TranspositionTable::new(16));
         let searcher = Searcher::new(movegen.clone(), tt.clone());
         let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish { 

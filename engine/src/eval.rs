@@ -1,7 +1,5 @@
 //! Static position evaluation.
 
-pub type Score = i32;
-
 use crate::{board::PieceChange, psqt::{self, TaperedValue}};
 
 

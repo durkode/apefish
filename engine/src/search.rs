@@ -1,17 +1,12 @@
 //! Search: choosing a move under time/depth constraints.
 
-use std::any;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::basetypes::Move;
+use crate::basetypes::{MATE, Move, Score};
 use crate::board::Position;
-use crate::eval::Score;
 use crate::movegen::MoveGen;
-use crate::transposition_table::{self, ScoreBound, TranspositionTable};
-
-const MATE: Score = i32::MAX;
+use crate::transposition_table::{ScoreBound, TranspositionTable};
 
 /// Constraints on a single search call. All fields optional; interpretation
 /// (e.g. how clock time maps to a time budget) is up to the search implementation.

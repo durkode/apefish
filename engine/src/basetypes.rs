@@ -5,7 +5,14 @@ use subenum::subenum;
 
 use std::{fmt, str::FromStr};
 
-use crate::Position;
+pub type Score = i32;
+pub const MAX_MOVES: usize = 1024;
+pub const MAX_PLY: usize = MAX_MOVES * 2 + 1;
+// We compress Score into an i16 in the transposition table
+// So make sure Mate + ply stays in bounds of an i16
+// TODO: potentially wrap Score as a newtype.
+pub const MATE: Score = (i16::MAX - MAX_PLY as i16) as Score;
+pub const MATE_BOUND: Score = MATE - (MAX_PLY as Score);
 
 #[derive(Debug)]
 pub enum GenericErr {

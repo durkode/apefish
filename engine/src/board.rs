@@ -6,15 +6,13 @@
 use std::sync::Arc;
 
 use crate::UnvalidatedMove;
-use crate::eval::{Score, incremental_eval};
+use crate::eval::incremental_eval;
 use crate::phase::{PhaseScore, incremental_phase_score};
 use crate::psqt::TaperedValue;
 use crate::{fen, movegen::MoveGen};
-use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Side, Square};
+use crate::basetypes::{Bitboard, CastlingDirection, CastlingRights, File, GenericErr::{self, IllegalMove}, MAX_MOVES, Move, PerPiece, PerSide, PerSquare, Piece, PieceKind, Rank, Score, Side, Square};
 use crate::multiset::{MultiSet};
 use crate::zobrist::{ZobristKey, ZobristRandoms};
-
-const MAX_MOVES: usize = 1024;
 
 /// All of the metadata around gamestate (except actual pieces) at a given point in time
 #[derive(Debug, Copy, Clone)]
