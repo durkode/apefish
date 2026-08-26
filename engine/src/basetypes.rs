@@ -272,6 +272,10 @@ impl Move {
         Move(bits)
     }
 
+    pub fn new_from_bits(bits: u16) -> Self {
+        Move(bits)
+    }
+
     pub fn to_input_move(&self) -> UnvalidatedMove {
         UnvalidatedMove { from: self.from(), to: self.to(), promotion: self.promotion() }
     }
@@ -300,6 +304,17 @@ impl Move {
             kind_bits => Some(unsafe { std::mem::transmute::<u8, PieceKind>(kind_bits as u8) }),
         }
     }
+
+    pub fn bits(&self) -> u16 {
+        self.0
+    }
+
+    // Make a move from bits
+    // Make sure the bits are already validated, otherwise move will be corrupted and likely crash
+    pub fn from_bits(bits: u16) -> Move {
+        Move(bits)
+    }
+
 }
 
 impl fmt::Debug for Move {

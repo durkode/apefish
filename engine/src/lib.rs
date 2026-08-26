@@ -16,13 +16,14 @@ mod multiset;
 mod phase;
 #[cfg(test)]
 mod tests;
+mod transposition_table;
 
 use std::{sync::Arc};
 
 pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, transposition_table::TranspositionTable, zobrist::ZobristRandoms};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -71,7 +72,8 @@ impl Apefish {
     pub fn new() -> Self {
         let zobrists = Arc::new(ZobristRandoms::new());
         let movegen = Arc::new(MoveGen::init());
-        let searcher = Searcher::new(movegen.clone());
+        let tt: Arc<TranspositionTable> = Arc::new(TranspositionTable::new(512));
+        let searcher = Searcher::new(movegen.clone(), tt.clone());
         let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish { 
             position: pos, 
