@@ -378,12 +378,8 @@ impl MoveGen {
                     moves.push(Move::new(
                         from_square,
                         ts,
-                        piece_kind_actual,
                         None,
-                        pos.piece_by_square[ts].map(|x| x.kind),
-                        false,
-                        false,
-                    ));
+                    ))
                 }
             },
             PieceKind::Bishop | PieceKind::Rook => {
@@ -395,11 +391,7 @@ impl MoveGen {
                     moves.push(Move::new(
                         from_square,
                         ts,
-                        piece_kind_actual,
                         None,
-                        pos.piece_by_square[ts].map(|x| x.kind),
-                        false,
-                        false
                     ))
                 }
             }
@@ -419,11 +411,7 @@ impl MoveGen {
                     moves.push(Move::new(
                         direction.king_from(),
                         direction.king_to(),
-                        PieceKind::King,
                         None,
-                        None,
-                        true,
-                        false
                     ))
                 }
             }
@@ -438,7 +426,7 @@ impl MoveGen {
             _ => { &[None]},
         };
         for po in promotion_options {
-            moves.push(Move::new(from, to, PieceKind::Pawn, *po, captured, false, en_passant));
+            moves.push(Move::new(from, to,*po));
         }
     }
 

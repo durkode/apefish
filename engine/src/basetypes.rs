@@ -246,12 +246,8 @@ pub struct Move {
 
 impl Move {
 
-    pub fn new(from: Square, to: Square, piece_kind: PieceKind, 
-               promotion: Option<PieceKind>, captured: Option<PieceKind>, 
-               castling: bool, en_passant: bool) -> Move {
-        
+    pub fn new(from: Square, to: Square, promotion: Option<PieceKind>) -> Move {
         Move { from, to, promotion }
-
     }
 
     pub fn to_input_move(&self) -> UnvalidatedMove {
