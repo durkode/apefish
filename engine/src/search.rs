@@ -49,8 +49,8 @@ impl Searcher {
     // From this should branch into opening book, closing tables, or negamax.
     pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
 
-        // Run off constants for now.
-        let depth = 4;
+        // For now, no limit means 1. In future this should be unlimited.
+        let depth = limits.depth.unwrap_or(1);
         let ply = 0;
         let alpha = -MATE; // Starting bounds for best move for current side
         let beta = MATE; // Starting bounds for best move for opponent side
