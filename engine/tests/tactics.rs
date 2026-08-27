@@ -24,9 +24,11 @@
 //! the acceptance spec real search needs to satisfy, not a regression guard
 //! for something already working.
 
+use std::sync::mpsc;
+
 use apefish_engine::basetypes::{GameStatus, WinReason};
-use apefish_engine::search::SearchLimits;
-use apefish_engine::{Apefish, Engine, Side};
+use apefish_engine::search::{SearchLimits, SearchResult};
+use apefish_engine::{Apefish, Engine, EngineEvent, Side};
 
 /// A depth limit, generous relative to the position's difficulty - the
 /// point is to give a correct search comfortable headroom to find the
@@ -41,6 +43,23 @@ fn engine_at(fen: &str) -> Apefish {
     let mut engine = Apefish::new(64);
     engine.set_position(Some(fen), &[]);
     engine
+}
+
+/// Run a search to completion and return its final result, driving the
+/// asynchronous [`Engine::go`] interface synchronously: the search thread
+/// reports through a channel and this blocks on it until the terminal
+/// [`EngineEvent::BestMove`] arrives, discarding the intermediate `Info` reports.
+fn search(engine: &mut Apefish, limits: SearchLimits) -> SearchResult {
+    let (tx, rx) = mpsc::channel();
+    engine.go(limits, Box::new(move |event| {
+        let _ = tx.send(event);
+    }));
+    loop {
+        match rx.recv().expect("search ended without emitting a BestMove event") {
+            EngineEvent::BestMove(result) => return result,
+            EngineEvent::Info { .. } => {}
+        }
+    }
 }
 
 /// Verifies a forced mate without pinning down a specific mating line:
@@ -64,7 +83,7 @@ fn assert_forced_mate(engine: &mut Apefish, mating_side: Side, moves_remaining: 
         engine.fen()
     );
 
-    let result = engine.go(limits(search_depth));
+    let result = search(engine, limits(search_depth));
     let mv = result.best_move.unwrap_or_else(|| panic!("engine returned no move at fen `{}`", engine.fen()));
     engine.make_move(mv.to_input_move()).unwrap_or_else(|e| {
         panic!("engine's own move `{mv}` from `go` was rejected by `make_move`: {e:?}")
@@ -126,7 +145,7 @@ fn assert_mate_in(fen: &str, mating_side: Side, moves: u8, search_depth: u8) {
 fn assert_forced_line(engine: &mut Apefish, search_depth: u8, expected: &[&[&str]]) {
     let Some((accepted, rest)) = expected.split_first() else { return };
 
-    let result = engine.go(limits(search_depth));
+    let result = search(engine, limits(search_depth));
     let mv = result.best_move.unwrap_or_else(|| panic!("engine returned no move at fen `{}`", engine.fen()));
     let played = mv.to_string();
     assert!(

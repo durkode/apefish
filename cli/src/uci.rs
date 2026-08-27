@@ -2,20 +2,38 @@
 //!
 //! Speaks the UCI protocol over stdin/stdout, driving an [`Apefish`] purely through
 //! the public [`Engine`] trait — see `engine/src/lib.rs` for why that trait exists.
+//!
+//! Search is asynchronous. [`run`] reads stdin on a dedicated thread and folds
+//! every input line and every [`EngineEvent`] into one `mpsc` queue, so the main
+//! loop can service `stop`/`isready` while a `go` search is still running.
 
 use std::io::{self, BufRead, Write};
+use std::sync::mpsc::{self, Sender};
+use std::thread;
 use std::time::Duration;
 
 use apefish_engine::search::SearchLimits;
-use apefish_engine::{Apefish, Engine, UnvalidatedMove, PieceKind, Square};
+use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square, UnvalidatedMove};
+
+/// Everything the main loop waits on: a line typed by the GUI, an event from the
+/// engine's search thread, or the end of stdin.
+#[derive(Debug)]
+pub enum Msg {
+    Line(String),
+    Engine(EngineEvent),
+    Eof,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CommandOutcome {
+    /// Immediate response lines for the GUI (may be empty). A search's own
+    /// output (`info`, `bestmove`) does not return this way — it arrives later
+    /// as [`Msg::Engine`].
     Continue(Vec<String>),
     Quit,
 }
 
-/// Parse a UCI long-algebraic move (e.g. "e2e4", "e7e8q") into an [`InputMove`].
+/// Parse a UCI long-algebraic move (e.g. "e2e4", "e7e8q") into an [`UnvalidatedMove`].
 pub fn parse_uci_move(s: &str) -> Option<UnvalidatedMove> {
     if s.len() != 4 && s.len() != 5 {
         return None;
@@ -105,8 +123,37 @@ fn handle_position(engine: &mut Apefish, args: &str) {
     }
 }
 
-/// Handle a single line of UCI input against `engine`, returning any response lines.
-pub fn handle_line(engine: &mut Apefish, line: &str) -> CommandOutcome {
+/// Render an [`EngineEvent`] as the UCI line it produces on stdout.
+pub fn format_event(event: &EngineEvent) -> String {
+    match event {
+        EngineEvent::Info { depth, result } => {
+            let mut line = format!(
+                "info depth {depth} score cp {} nodes {}",
+                result.score, result.nodes
+            );
+            if !result.pv.is_empty() {
+                line.push_str(" pv");
+                for mv in &result.pv {
+                    line.push(' ');
+                    line.push_str(&mv.to_string());
+                }
+            }
+            line
+        }
+        EngineEvent::BestMove(result) => {
+            let mv = match result.best_move {
+                Some(mv) => mv.to_string(),
+                None => "0000".to_string(),
+            };
+            format!("bestmove {mv}")
+        }
+    }
+}
+
+/// Handle a single line of UCI input against `engine`, returning any immediate
+/// response lines. A `go` command starts an asynchronous search that reports
+/// through `events`; its `info`/`bestmove` output does not come back here.
+pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> CommandOutcome {
     let line = line.trim();
     let mut parts = line.splitn(2, char::is_whitespace);
     let cmd = parts.next().unwrap_or("");
@@ -129,12 +176,14 @@ pub fn handle_line(engine: &mut Apefish, line: &str) -> CommandOutcome {
         }
         "go" => {
             let limits = parse_go_limits(rest);
-            let result = engine.go(limits);
-            let mv_str = match result.best_move {
-                Some(mv) => mv.to_string(),
-                None => "0000".to_string(),
-            };
-            CommandOutcome::Continue(vec![format!("bestmove {mv_str}")])
+            let sink = events.clone();
+            engine.go(
+                limits,
+                Box::new(move |ev| {
+                    let _ = sink.send(Msg::Engine(ev));
+                }),
+            );
+            CommandOutcome::Continue(vec![])
         }
         "stop" => {
             engine.stop();
@@ -151,22 +200,49 @@ pub fn handle_line(engine: &mut Apefish, line: &str) -> CommandOutcome {
 /// Run the UCI protocol loop over stdin/stdout until `quit` or EOF.
 pub fn run() {
     let mut engine = Apefish::new(512);
-    let stdout = io::stdout();
-    let stdin = io::stdin();
+    let (tx, rx) = mpsc::channel::<Msg>();
 
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        match handle_line(&mut engine, &line) {
-            CommandOutcome::Continue(lines) => {
-                if !lines.is_empty() {
-                    let mut out = stdout.lock();
-                    for l in lines {
-                        let _ = writeln!(out, "{l}");
-                    }
-                    let _ = out.flush();
-                }
+    // Dedicated stdin reader: turns each line into a `Msg` so the main loop only
+    // ever waits on one queue, and stays responsive during a search.
+    let stdin_tx = tx.clone();
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let Ok(line) = line else { break };
+            if stdin_tx.send(Msg::Line(line)).is_err() {
+                return;
             }
-            CommandOutcome::Quit => break,
+        }
+        let _ = stdin_tx.send(Msg::Eof);
+    });
+
+    let stdout = io::stdout();
+    for msg in rx {
+        match msg {
+            Msg::Line(line) => match handle_line(&mut engine, &line, &tx) {
+                CommandOutcome::Continue(lines) => {
+                    if !lines.is_empty() {
+                        let mut out = stdout.lock();
+                        for l in lines {
+                            let _ = writeln!(out, "{l}");
+                        }
+                        let _ = out.flush();
+                    }
+                }
+                CommandOutcome::Quit => {
+                    engine.stop();
+                    break;
+                }
+            },
+            Msg::Engine(event) => {
+                let mut out = stdout.lock();
+                let _ = writeln!(out, "{}", format_event(&event));
+                let _ = out.flush();
+            }
+            Msg::Eof => {
+                engine.stop();
+                break;
+            }
         }
     }
 }

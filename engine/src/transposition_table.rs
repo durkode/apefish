@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use crate::basetypes::{MATE_BOUND, Move, Score};
 
@@ -72,7 +73,7 @@ impl TTHit {
 
 const SEARCH_ITERATION_NUM_MASK: u8 = 0b0011_1111; // Take 6 LSB
 
-pub trait TT: std::fmt::Debug {
+pub trait TT: Debug + Send + Sync {
     fn new_search(&self);
     fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit>;
     fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32);

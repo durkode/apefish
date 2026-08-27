@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration};
 
+use crate::{EngineEvent, EventSink};
 use crate::basetypes::{MATE, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
@@ -38,7 +38,7 @@ pub struct NegamaxResult {
     pub score: Score,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Searcher {
     movegen: Arc<MoveGen>,
     tt: Arc<dyn TT>,
@@ -51,22 +51,21 @@ impl Searcher {
         Searcher {
             movegen: movegen,
             tt: transposition_table,
-            stop: stop
+            stop: stop,
         }
     }
 
 
     // Main search entrypoint.
     // From this should branch into opening book, closing tables, or negamax.
-    pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
-        // Clear the stop flag from previous search
-        self.stop.store(false, Relaxed);
+    pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits, send_event: &EventSink) {
         
         // For now just call iterative deepening. In future add opening book calls to here as well
-        self.iterative_deepening(pos, limits)
+        let search_result = self.iterative_deepening(pos, limits, send_event);
+        send_event(EngineEvent::BestMove(search_result));
     }
 
-    fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
+    fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits, send_event: &EventSink) -> SearchResult {
         // For now, no limit means 1. In future this should be an extremely large number.
         let max_depth = limits.depth.unwrap_or(u8::MAX);
         let ply = 0;
@@ -87,9 +86,23 @@ impl Searcher {
                     break;
                 }
             }
-            if let Some(search_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), &mut nodes_searched) {
-                score = search_result.score;
-                best_move = search_result.best_move;
+            if let Some(negamax_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), &mut nodes_searched) {
+                score = negamax_result.score;
+                best_move = negamax_result.best_move;
+
+                // Emit a status update
+                send_event(EngineEvent::Info { 
+                    depth, 
+                    result: SearchResult { 
+                        best_move, 
+                        score, 
+                        pv: vec![], 
+                        nodes: nodes_searched
+                    } 
+                });
+            } else {
+                // Aborted either by stop request or new search.
+                break;
             }
         }
 

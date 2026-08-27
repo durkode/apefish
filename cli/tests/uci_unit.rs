@@ -2,10 +2,28 @@
 //! driven directly through `apefish_cli::uci`'s public functions.
 //! See `uci_integration.rs` for the black-box test of the actual `--uci` binary.
 
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use apefish_cli::uci::{handle_line, parse_go_limits, parse_uci_move, CommandOutcome};
-use apefish_engine::{Apefish, Engine, PieceKind, Square};
+use apefish_cli::uci::{handle_line, parse_go_limits, parse_uci_move, CommandOutcome, Msg};
+use apefish_engine::search::SearchResult;
+use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square};
+
+/// A throwaway event channel for commands that don't start a search.
+fn event_channel() -> (Sender<Msg>, Receiver<Msg>) {
+    mpsc::channel()
+}
+
+/// Block until the search delivers its final `BestMove`, skipping `Info` reports.
+fn recv_bestmove(rx: &Receiver<Msg>) -> SearchResult {
+    loop {
+        match rx.recv().expect("engine event before channel closed") {
+            Msg::Engine(EngineEvent::BestMove(result)) => return result,
+            Msg::Engine(EngineEvent::Info { .. }) => continue,
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+}
 
 #[test]
 fn parse_uci_move_plain() {
@@ -65,7 +83,8 @@ fn go_limits_ignores_unknown_tokens() {
 #[test]
 fn handle_line_uci() {
     let mut engine = Apefish::new(0);
-    match handle_line(&mut engine, "uci") {
+    let (tx, _rx) = event_channel();
+    match handle_line(&mut engine, "uci", &tx) {
         CommandOutcome::Continue(lines) => {
             assert_eq!(
                 lines,
@@ -83,7 +102,8 @@ fn handle_line_uci() {
 #[test]
 fn handle_line_isready() {
     let mut engine = Apefish::new(0);
-    match handle_line(&mut engine, "isready") {
+    let (tx, _rx) = event_channel();
+    match handle_line(&mut engine, "isready", &tx) {
         CommandOutcome::Continue(lines) => assert_eq!(lines, vec!["readyok".to_string()]),
         CommandOutcome::Quit => panic!("expected Continue"),
     }
@@ -92,7 +112,8 @@ fn handle_line_isready() {
 #[test]
 fn handle_line_position_startpos_moves() {
     let mut engine = Apefish::new(0);
-    handle_line(&mut engine, "position startpos moves e2e4 e7e5");
+    let (tx, _rx) = event_channel();
+    handle_line(&mut engine, "position startpos moves e2e4 e7e5", &tx);
     assert_eq!(
         engine.fen(),
         "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2"
@@ -102,8 +123,9 @@ fn handle_line_position_startpos_moves() {
 #[test]
 fn handle_line_position_fen_moves() {
     let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    handle_line(&mut engine, &format!("position fen {fen} moves d2d4"));
+    handle_line(&mut engine, &format!("position fen {fen} moves d2d4"), &tx);
     assert_eq!(
         engine.fen(),
         "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1"
@@ -113,7 +135,8 @@ fn handle_line_position_fen_moves() {
 #[test]
 fn handle_line_position_stops_on_illegal_move() {
     let mut engine = Apefish::new(0);
-    handle_line(&mut engine, "position startpos moves e2e4 e2e4");
+    let (tx, _rx) = event_channel();
+    handle_line(&mut engine, "position startpos moves e2e4 e2e4", &tx);
     // e2e4 applied once, then the second (now-illegal) e2e4 is rejected
     // without panicking and without altering the position further.
     assert_eq!(
@@ -126,31 +149,35 @@ fn handle_line_position_stops_on_illegal_move() {
 fn handle_line_go_returns_legal_move() {
     let mut engine = Apefish::new(0);
     let legal: Vec<String> = engine.legal_moves().iter().map(|m| m.to_string()).collect();
-    match handle_line(&mut engine, "go depth 1") {
-        CommandOutcome::Continue(lines) => {
-            assert_eq!(lines.len(), 1);
-            let mv = lines[0].strip_prefix("bestmove ").expect("bestmove prefix");
-            assert!(legal.contains(&mv.to_string()));
-        }
+    let (tx, rx) = event_channel();
+
+    match handle_line(&mut engine, "go depth 1", &tx) {
+        CommandOutcome::Continue(lines) => assert!(lines.is_empty()),
         CommandOutcome::Quit => panic!("expected Continue"),
     }
+
+    let result = recv_bestmove(&rx);
+    let mv = result.best_move.expect("a legal move").to_string();
+    assert!(legal.contains(&mv));
 }
 
 #[test]
 fn handle_line_go_no_legal_moves() {
     let mut engine = Apefish::new(0);
+    let (tx, rx) = event_channel();
     // Fool's mate: black has just delivered checkmate.
-    handle_line(&mut engine, "position startpos moves f2f3 e7e5 g2g4 d8h4");
-    match handle_line(&mut engine, "go") {
-        CommandOutcome::Continue(lines) => assert_eq!(lines, vec!["bestmove 0000".to_string()]),
-        CommandOutcome::Quit => panic!("expected Continue"),
-    }
+    handle_line(&mut engine, "position startpos moves f2f3 e7e5 g2g4 d8h4", &tx);
+    handle_line(&mut engine, "go", &tx);
+
+    let result = recv_bestmove(&rx);
+    assert_eq!(result.best_move, None);
 }
 
 #[test]
 fn handle_line_quit() {
     let mut engine = Apefish::new(0);
-    match handle_line(&mut engine, "quit") {
+    let (tx, _rx) = event_channel();
+    match handle_line(&mut engine, "quit", &tx) {
         CommandOutcome::Quit => {}
         CommandOutcome::Continue(_) => panic!("expected Quit"),
     }
@@ -159,8 +186,9 @@ fn handle_line_quit() {
 #[test]
 fn handle_line_unknown_command_is_noop() {
     let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
     let before = engine.fen();
-    match handle_line(&mut engine, "foobar") {
+    match handle_line(&mut engine, "foobar", &tx) {
         CommandOutcome::Continue(lines) => assert!(lines.is_empty()),
         CommandOutcome::Quit => panic!("expected Continue"),
     }
