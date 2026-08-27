@@ -1,6 +1,8 @@
 //! Search: choosing a move under time/depth constraints.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
 use crate::basetypes::{MATE, Move, Score};
@@ -34,14 +36,16 @@ pub struct SearchResult {
 pub struct Searcher {
     movegen: Arc<MoveGen>,
     tt: Arc<dyn TT>,
+    stop: Arc<AtomicBool>,
 }
 
 impl Searcher {
 
-    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>) -> Self {
+    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>, stop: Arc<AtomicBool>) -> Self {
         Searcher {
             movegen: movegen,
-            tt: transposition_table
+            tt: transposition_table,
+            stop: stop
         }
     }
 
@@ -49,6 +53,9 @@ impl Searcher {
     // Main search entrypoint.
     // From this should branch into opening book, closing tables, or negamax.
     pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
+        // Clear the stop flag from previous search
+        self.stop.store(false, Relaxed);
+        
         // For now just call iterative deepening. In future add opening book calls to here as well
         self.iterative_deepening(pos, limits)
     }
@@ -66,6 +73,7 @@ impl Searcher {
 
         let mut score: Score = 0;
         let mut best_move = None;
+        let mut nodes_searched = 0;
         
         for depth in 0..max_depth {
             if let Some(ref cutoffs) = time_cutoffs {
@@ -73,7 +81,11 @@ impl Searcher {
                     break;
                 }
             }
-            (score, best_move) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref());
+            if let Some(search_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), 0) {
+                score = search_result.score;
+                best_move = search_result.best_move;
+                nodes_searched += nodes_searched
+            }
         }
 
         // If we can't check to any depth, just return the first legal move to remain valid
@@ -85,16 +97,36 @@ impl Searcher {
             best_move, 
             score, 
             pv: vec![], 
-            nodes: 1 
+            nodes: nodes_searched
         }
     }
 
     // For now return move as well as score, remove move once we have that in the TT.
     // Alpha: best score for active side achieved so far.
     // Beta: best score for opponent achieved so far.
-    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>) -> (Score, Option<Move>) {
+    // Returns:
+    //   - score
+    //   - best_move
+    //   - nodes_searched
+    //   - Search complete (not aborted)
+    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>, nodes_searched: u64) -> Option<SearchResult> {
+        let nodes_searched = nodes_searched + 1;
+
+        // Check if search is aborted or timed out
+        // Only do every 2048 nodes as no need for more often
+        if nodes_searched & 2047 == 0 {
+            if let Some(cutoffs) = cutoffs {
+                if cutoffs.exceeded_hard() {
+                    return None
+                }
+            }
+            if self.stop.load(Ordering::Relaxed) {
+                return None
+            }
+        }
+
         if depth == 0 {
-            return (pos.evaluate(), None)
+            return Some(SearchResult{best_move: None, score: pos.evaluate(), pv: vec![], nodes: nodes_searched})
         }
 
         // Check the TT to see if this position is stored already
@@ -105,9 +137,9 @@ impl Searcher {
                 // This position has already been searched at a depth >= requested depth
                 // Return early if possible
                 match tt_hit.bound {
-                    ScoreBound::Exact => return (tt_hit.score, tt_move),
-                    ScoreBound::Lower if tt_hit.score >= beta => return (tt_hit.score, tt_move),
-                    ScoreBound::Upper if tt_hit.score <= alpha => return (tt_hit.score, tt_move),
+                    ScoreBound::Exact => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
+                    ScoreBound::Lower if tt_hit.score >= beta => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
+                    ScoreBound::Upper if tt_hit.score <= alpha => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
                     _ => {}
                 }
             }
@@ -130,8 +162,15 @@ impl Searcher {
             if pos.make_move(cm).is_err() {
                 continue
             }
-            let score = -1 * self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs).0;
+            let subsearch = self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs, nodes_searched);
             pos.unmake_move();
+
+            if subsearch.is_none() {
+                // Search was aborted or timed out
+                return None
+            }
+
+            let score = -1 * subsearch.unwrap().score;
 
             // Use fail-soft version of alpha beta pruning.
             if score > best_score {
@@ -152,9 +191,9 @@ impl Searcher {
             // No move found, so game is over
             if pos.in_check() {
                 // Need to add ply in order to get the quickest path to checkmate (penalise longer paths)
-                return (-MATE + ply as Score, None)
+                return Some(SearchResult{best_move: None, score: -MATE + ply as Score, pv: vec![], nodes: nodes_searched})
             } else {
-                return (0, None)
+                return Some(SearchResult { best_move: None, score: 0, pv: vec![], nodes: nodes_searched });
             }
         } else {
             // Store the Score + Move in the TT
@@ -173,6 +212,6 @@ impl Searcher {
             );
         }
 
-        (best_score, best_move)
+        Some(SearchResult{best_move: best_move, score: best_score, pv: vec![], nodes: nodes_searched})
     }
 }

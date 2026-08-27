@@ -19,14 +19,13 @@ mod tests;
 mod transposition_table;
 mod time_management;
 
-use std::{sync::Arc};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
 use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
-// pub use movegen::GameStatus;
-// pub use search::{SearchLimits, SearchResult};
+
 
 /// The interface every frontend adapter (local CLI, UCI, Lichess, ...) is built against.
 pub trait Engine {
@@ -67,6 +66,7 @@ pub struct Apefish {
     movegen: Arc<MoveGen>,
     zobrist_randoms: Arc<ZobristRandoms>,
     searcher: Searcher,
+    stop_handle: Arc<AtomicBool>,
 }
 
 impl Apefish {
@@ -77,13 +77,15 @@ impl Apefish {
             0 => Arc::new(NoopTranspositionTable),
             _ => Arc::new(ActiveTranspositionTable::new(16)),
         };
-        let searcher = Searcher::new(movegen.clone(), tt);
+        let stop_handle = Arc::new(AtomicBool::new(false));
+        let searcher = Searcher::new(movegen.clone(), tt, stop_handle.clone());
         let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish { 
             position: pos, 
             movegen:  movegen,
             zobrist_randoms: zobrists,
             searcher: searcher,
+            stop_handle: stop_handle
         }
     }
 
@@ -152,18 +154,10 @@ impl Engine for Apefish {
     }
 
     fn go(&mut self, limits: SearchLimits) -> SearchResult {
-        // Return the first legal move just to get it operational before we actually search.
-        // let best_move = self.legal_moves().first().cloned();
-        // SearchResult { 
-        //     best_move: best_move, 
-        //     score: 0, 
-        //     pv: vec![], 
-        //     nodes: 1, 
-        // }
         self.searcher.search(&mut self.position, &limits)
     }
 
     fn stop(&mut self) {
-        // Do nothing currently, but revisit when search is implemented
+        self.stop_handle.store(true, Ordering::Relaxed);
     }
 }
