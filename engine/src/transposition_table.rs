@@ -72,15 +72,20 @@ impl TTHit {
 
 const SEARCH_ITERATION_NUM_MASK: u8 = 0b0011_1111; // Take 6 LSB
 
+pub trait TT: std::fmt::Debug {
+    fn new_search(&self);
+    fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit>;
+    fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32);
+}
+
 #[derive(Debug)]
-pub struct TranspositionTable {
+pub struct ActiveTranspositionTable {
     // Use boxed slice rather than Vec to enforce it can't be resized
     entries: Box<[TTEntry]>,
     search_iteration: AtomicU8,
 }
 
-impl TranspositionTable {
-
+impl ActiveTranspositionTable {
     pub fn new(size_in_megabytes: usize) -> Self {
         if size_in_megabytes == 0 {
             panic!("TT size can't be 0")
@@ -92,12 +97,6 @@ impl TranspositionTable {
         Self { entries: entry_vec.into_boxed_slice(), search_iteration: AtomicU8::new(0)}
     }
 
-    pub fn new_search(&self) {
-        // Increment by 1, wrapping at 64
-        let new_val = self.search_iteration.load(Ordering::Relaxed).wrapping_add(1) & SEARCH_ITERATION_NUM_MASK;
-        self.search_iteration.store(new_val, Ordering::Relaxed);
-    }
-
     fn hash_zobrist(&self, zobrist: u64) -> usize {
         // TODO: More efficient ways to do this if we assume table size is a power of 2. Maybe investigate in the future.
 
@@ -106,9 +105,19 @@ impl TranspositionTable {
         // alternative think of as 1/z * num_slots = randomly distributed int in 0..num_slots.
         (((zobrist as u128) * (self.entries.len() as u128)) >> 64) as usize
     }
+}
+
+impl TT for ActiveTranspositionTable {
+
+    fn new_search(&self) {
+        // Increment by 1, wrapping at 64
+        self.search_iteration.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            Some(v.wrapping_add(1) & SEARCH_ITERATION_NUM_MASK)
+        }).unwrap();
+    }
 
     // Attempt to find an entry in the TT
-    pub fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {
+    fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {
         let entry = &self.entries[self.hash_zobrist(zobrist)];
         let key = entry.key.load(Ordering::Relaxed);
         let data = entry.data.load(Ordering::Relaxed);
@@ -129,9 +138,10 @@ impl TranspositionTable {
         Some(hit)
     }
 
-    pub fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {
+    fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {
         let entry = &self.entries[self.hash_zobrist(zobrist)];
         let old_data = entry.data.load(Ordering::Relaxed);
+        let search_iteration = self.search_iteration.load(Ordering::Relaxed);
 
         // Only replace if newer search or greater depth at same search
         let replace_slot = {
@@ -140,8 +150,7 @@ impl TranspositionTable {
             } else {
                 let old_hit = TTHit::unmarshall(old_data);
                 // Cast depth to i32 to deal with overflow
-                // TODO: make search_iteration nonAtomic, as likely killing performance
-                old_hit.search_iteration != self.search_iteration.load(Ordering::Relaxed) || depth as i32 + 2 > old_hit.depth as i32
+                old_hit.search_iteration != search_iteration || depth as i32 + 2 > old_hit.depth as i32
             }
         };
         if !replace_slot {
@@ -162,15 +171,27 @@ impl TranspositionTable {
             score
         };
 
-        let data = TTHit::marshall(&TTHit { 
-            mv, 
-            score, 
-            depth, 
-            bound, 
-            search_iteration: self.search_iteration.load(Ordering::Relaxed) 
+        let data = TTHit::marshall(&TTHit {
+            mv,
+            score,
+            depth,
+            bound,
+            search_iteration
         });
         entry.key.store(zobrist ^ data, Ordering::Relaxed);
         entry.data.store(data, Ordering::Relaxed);
     }
 
+}
+
+
+// No-op transposition table
+#[derive(Debug)]
+pub struct NoopTranspositionTable;
+impl TT for NoopTranspositionTable {
+    fn new_search(&self) {}
+    #[allow(unused_variables)]
+    fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {None}
+    #[allow(unused_variables)]
+    fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {}
 }

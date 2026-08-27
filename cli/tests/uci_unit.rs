@@ -64,7 +64,7 @@ fn go_limits_ignores_unknown_tokens() {
 
 #[test]
 fn handle_line_uci() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     match handle_line(&mut engine, "uci") {
         CommandOutcome::Continue(lines) => {
             assert_eq!(
@@ -82,7 +82,7 @@ fn handle_line_uci() {
 
 #[test]
 fn handle_line_isready() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     match handle_line(&mut engine, "isready") {
         CommandOutcome::Continue(lines) => assert_eq!(lines, vec!["readyok".to_string()]),
         CommandOutcome::Quit => panic!("expected Continue"),
@@ -91,7 +91,7 @@ fn handle_line_isready() {
 
 #[test]
 fn handle_line_position_startpos_moves() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     handle_line(&mut engine, "position startpos moves e2e4 e7e5");
     assert_eq!(
         engine.fen(),
@@ -101,7 +101,7 @@ fn handle_line_position_startpos_moves() {
 
 #[test]
 fn handle_line_position_fen_moves() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     handle_line(&mut engine, &format!("position fen {fen} moves d2d4"));
     assert_eq!(
@@ -112,7 +112,7 @@ fn handle_line_position_fen_moves() {
 
 #[test]
 fn handle_line_position_stops_on_illegal_move() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     handle_line(&mut engine, "position startpos moves e2e4 e2e4");
     // e2e4 applied once, then the second (now-illegal) e2e4 is rejected
     // without panicking and without altering the position further.
@@ -124,7 +124,7 @@ fn handle_line_position_stops_on_illegal_move() {
 
 #[test]
 fn handle_line_go_returns_legal_move() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     let legal: Vec<String> = engine.legal_moves().iter().map(|m| m.to_string()).collect();
     match handle_line(&mut engine, "go depth 1") {
         CommandOutcome::Continue(lines) => {
@@ -138,7 +138,7 @@ fn handle_line_go_returns_legal_move() {
 
 #[test]
 fn handle_line_go_no_legal_moves() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     // Fool's mate: black has just delivered checkmate.
     handle_line(&mut engine, "position startpos moves f2f3 e7e5 g2g4 d8h4");
     match handle_line(&mut engine, "go") {
@@ -149,7 +149,7 @@ fn handle_line_go_no_legal_moves() {
 
 #[test]
 fn handle_line_quit() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     match handle_line(&mut engine, "quit") {
         CommandOutcome::Quit => {}
         CommandOutcome::Continue(_) => panic!("expected Quit"),
@@ -158,7 +158,7 @@ fn handle_line_quit() {
 
 #[test]
 fn handle_line_unknown_command_is_noop() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     let before = engine.fen();
     match handle_line(&mut engine, "foobar") {
         CommandOutcome::Continue(lines) => assert!(lines.is_empty()),

@@ -23,7 +23,7 @@ use std::{sync::Arc};
 pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, transposition_table::TranspositionTable, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
 // pub use movegen::GameStatus;
 // pub use search::{SearchLimits, SearchResult};
 
@@ -69,11 +69,14 @@ pub struct Apefish {
 }
 
 impl Apefish {
-    pub fn new() -> Self {
+    pub fn new(tt_size_in_mb: usize) -> Self {
         let zobrists = Arc::new(ZobristRandoms::new());
         let movegen = Arc::new(MoveGen::init());
-        let tt: Arc<TranspositionTable> = Arc::new(TranspositionTable::new(16));
-        let searcher = Searcher::new(movegen.clone(), tt.clone());
+        let tt: Arc<dyn TT> = match tt_size_in_mb {
+            0 => Arc::new(NoopTranspositionTable),
+            _ => Arc::new(ActiveTranspositionTable::new(16)),
+        };
+        let searcher = Searcher::new(movegen.clone(), tt);
         let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish { 
             position: pos, 

@@ -12,7 +12,7 @@ fn main() {
         return;
     }
 
-    let mut af = Apefish::new();
+    let mut af = Apefish::new(0);
 
     let moves: Vec<UnvalidatedMove> = vec![
         UnvalidatedMove{

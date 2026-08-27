@@ -38,7 +38,7 @@ fn limits(depth: u8) -> SearchLimits {
 }
 
 fn engine_at(fen: &str) -> Apefish {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(64);
     engine.set_position(Some(fen), &[]);
     engine
 }

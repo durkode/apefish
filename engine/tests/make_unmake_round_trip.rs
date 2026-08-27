@@ -26,7 +26,7 @@ mod common;
 use common::assert_make_unmake_round_trips;
 
 fn assert_round_trips(fen: &str, depth: u32) {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     assert_make_unmake_round_trips(&mut engine, fen, depth);
 }
 

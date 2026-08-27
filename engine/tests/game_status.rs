@@ -47,7 +47,7 @@ fn play(engine: &mut Apefish, moves: &[&str]) {
 }
 
 fn status_at(fen: &str) -> GameStatus {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     engine.set_position(Some(fen), &[]);
     engine.game_status()
 }
@@ -238,7 +238,7 @@ mod fifty_move_rule {
     /// threshold would have fired, the position is ongoing again.
     #[test]
     fn pawn_move_resets_the_clock() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         engine.set_position(Some("8/8/4k3/8/4P3/4K3/8/8 w - - 99 1"), &[]);
         play(&mut engine, &["e4e5"]);
         assert_eq!(engine.game_status(), GameStatus::Ongoing);
@@ -247,7 +247,7 @@ mod fifty_move_rule {
     /// A capture resets the clock to zero too, same as a pawn move.
     #[test]
     fn capture_resets_the_clock() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         engine.set_position(Some("7n/8/4k3/8/8/4K3/8/7R w - - 99 1"), &[]);
         play(&mut engine, &["h1h8"]);
         assert_eq!(engine.game_status(), GameStatus::Ongoing);
@@ -257,7 +257,7 @@ mod fifty_move_rule {
     /// over to 100 and the position becomes drawn.
     #[test]
     fn quiet_move_ticks_clock_over_to_draw() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         engine.set_position(Some("8/8/3k4/8/8/4K3/8/4R3 w - - 99 1"), &[]);
         play(&mut engine, &["e3d2"]);
         assert_eq!(engine.game_status(), GameStatus::Drawn { reason: DrawReason::FiftyMoveRule });
@@ -274,7 +274,7 @@ mod threefold_repetition {
     /// occurrences and not yet a draw.
     #[test]
     fn two_occurrences_is_not_yet_a_draw() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         play(&mut engine, &["g1f3", "g8f6", "f3g1", "f6g8"]);
         assert_eq!(engine.game_status(), GameStatus::Ongoing);
     }
@@ -283,7 +283,7 @@ mod threefold_repetition {
     /// position to a third occurrence, which draws by threefold repetition.
     #[test]
     fn three_occurrences_draws() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         play(&mut engine, &["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"]);
         assert_eq!(
             engine.game_status(),
@@ -300,7 +300,7 @@ mod threefold_repetition {
     /// repeat of move 0.
     #[test]
     fn lost_castling_rights_are_not_the_same_position() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         engine.set_position(Some("4k3/8/8/8/8/8/8/4K2R w K - 0 1"), &[]);
         play(&mut engine, &["h1g1", "e8e7", "g1h1", "e7e8"]);
         // Rook and both kings are back where they started, but the castling
@@ -317,7 +317,7 @@ mod threefold_repetition {
     /// piece-placement-only comparison would suggest.
     #[test]
     fn lost_castling_rights_position_still_eventually_repeats() {
-        let mut engine = Apefish::new();
+        let mut engine = Apefish::new(0);
         engine.set_position(Some("4k3/8/8/8/8/8/8/4K2R w K - 0 1"), &[]);
         play(
             &mut engine,

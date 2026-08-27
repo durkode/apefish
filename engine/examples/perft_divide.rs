@@ -44,7 +44,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     let mut prefix: Vec<Move> = Vec::new();
     for uci in &args[3..] {
         engine.set_position(Some(&fen), prefix.as_slice());

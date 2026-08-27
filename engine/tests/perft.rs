@@ -53,7 +53,7 @@ use common::checked_perft;
 /// panic straight out of the test, so it can still be routed into the same
 /// bisect/dissect flow below rather than just printing a bare panic.
 fn assert_perft(fen: &str, depth: u32, expected: u64) {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     match checked_perft(&mut engine, fen, depth) {
         Ok(actual) => {
             if actual != expected {

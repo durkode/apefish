@@ -32,7 +32,7 @@ fn play(engine: &mut Apefish, moves: &[&str]) {
 }
 
 fn fen_after(start_fen: &str, moves: &[&str]) -> String {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     engine.set_position(Some(start_fen), &[]);
     play(&mut engine, moves);
     engine.fen()
@@ -123,7 +123,7 @@ fn castling_rights_lost_when_kingside_rook_moves() {
 /// total-count property that currently keeps it correct.
 #[test]
 fn knight_and_rook_together_is_not_insufficient_material() {
-    let mut engine = Apefish::new();
+    let mut engine = Apefish::new(0);
     engine.set_position(Some("4k3/8/8/8/8/8/8/2N1K2R w - - 0 1"), &[]);
     assert_eq!(engine.game_status(), GameStatus::Ongoing);
 }

@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::basetypes::{MATE, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
-use crate::transposition_table::{ScoreBound, TranspositionTable};
+use crate::transposition_table::{ActiveTranspositionTable, ScoreBound, TT};
 
 /// Constraints on a single search call. All fields optional; interpretation
 /// (e.g. how clock time maps to a time budget) is up to the search implementation.
@@ -32,13 +32,13 @@ pub struct SearchResult {
 #[derive(Debug)]
 pub struct Searcher {
     movegen: Arc<MoveGen>,
-    tt: Arc<TranspositionTable>,
+    tt: Arc<dyn TT>,
 }
 
 impl Searcher {
 
-    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<TranspositionTable>) -> Self {
-        Searcher { 
+    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>) -> Self {
+        Searcher {
             movegen: movegen,
             tt: transposition_table
         }
