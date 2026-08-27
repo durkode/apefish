@@ -150,7 +150,7 @@ pub fn handle_line(engine: &mut Apefish, line: &str) -> CommandOutcome {
 
 /// Run the UCI protocol loop over stdin/stdout until `quit` or EOF.
 pub fn run() {
-    let mut engine = Apefish::new(0);
+    let mut engine = Apefish::new(512);
     let stdout = io::stdout();
     let stdin = io::stdin();
 
