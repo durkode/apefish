@@ -472,6 +472,19 @@ impl Position {
         self.zobrists_visited.count(self.state.zobrist_hash)
     }
 
+    // This is an expensive operation. Do not use it in search (except for root node)
+    pub fn legal_moves(&mut self) -> Vec<Move> {
+        self.movegen.pseudo_legal_moves(self).into_iter().filter(|cm| {
+            match self.make_move(*cm) {
+                Ok(_) => {
+                    self.unmake_move();
+                    true
+                },
+                Err(_) => false
+            }
+        }).collect()
+    }
+
     // Evaluate relative to the current side
     pub fn evaluate(&self) -> Score {
         match self.state.active_side {

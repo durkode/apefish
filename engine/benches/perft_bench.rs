@@ -90,7 +90,7 @@ fn perft_throughput(c: &mut Criterion) {
         group.throughput(Throughput::Elements(case.nodes));
         group.bench_function(case.name, |b| {
             b.iter_batched(
-                Apefish::new,
+                || Apefish::new(0),
                 |mut engine| common::perft(&mut engine, case.fen, case.depth),
                 BatchSize::SmallInput,
             );

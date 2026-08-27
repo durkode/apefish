@@ -17,6 +17,7 @@ mod phase;
 #[cfg(test)]
 mod tests;
 mod transposition_table;
+mod time_management;
 
 use std::{sync::Arc};
 
@@ -114,15 +115,7 @@ impl Engine for Apefish {
     }
 
     fn legal_moves(&mut self) -> Vec<Move> {
-        self.movegen.pseudo_legal_moves(&self.position).into_iter().filter(|cm| {
-            match self.position.make_move(*cm) {
-                Ok(_) => {
-                    self.position.unmake_move();
-                    true
-                },
-                Err(_) => false
-            }
-        }).collect()
+        self.position.legal_moves()
     }
 
     fn make_move(&mut self, to_make: UnvalidatedMove) -> Result<(), GenericErr> {

@@ -1,11 +1,12 @@
 //! Search: choosing a move under time/depth constraints.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::basetypes::{MATE, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
+use crate::time_management::TimeCutoffs;
 use crate::transposition_table::{ActiveTranspositionTable, ScoreBound, TT};
 
 /// Constraints on a single search call. All fields optional; interpretation
@@ -48,17 +49,37 @@ impl Searcher {
     // Main search entrypoint.
     // From this should branch into opening book, closing tables, or negamax.
     pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
+        // For now just call iterative deepening. In future add opening book calls to here as well
+        self.iterative_deepening(pos, limits)
+    }
 
-        // For now, no limit means 1. In future this should be unlimited.
-        let depth = limits.depth.unwrap_or(1);
+    fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
+        // For now, no limit means 1. In future this should be an extremely large number.
+        let max_depth = if limits.depth.unwrap_or(0) == 0 { 0 } else { limits.depth.unwrap() };
         let ply = 0;
         let alpha = -MATE; // Starting bounds for best move for current side
         let beta = MATE; // Starting bounds for best move for opponent side
 
+        let time_cutoffs = TimeCutoffs::from_search_limit(limits, pos.side_to_move());
+
         self.tt.new_search(); // Set the correct search iteration now we are starting a new search
 
-        // For now, just delegate to Negamax. In future, add opening and closing books
-        let (score, best_move) = self.negamax(pos, depth, ply, alpha, beta);
+        let mut score: Score = 0;
+        let mut best_move = None;
+        
+        for depth in 0..max_depth {
+            if let Some(ref cutoffs) = time_cutoffs {
+                if cutoffs.exceeded_soft() {
+                    break;
+                }
+            }
+            (score, best_move) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref());
+        }
+
+        // If we can't check to any depth, just return the first legal move to remain valid
+        if best_move.is_none() {
+            best_move = pos.legal_moves().first().copied();
+        }
 
         SearchResult { 
             best_move, 
@@ -71,7 +92,7 @@ impl Searcher {
     // For now return move as well as score, remove move once we have that in the TT.
     // Alpha: best score for active side achieved so far.
     // Beta: best score for opponent achieved so far.
-    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score) -> (Score, Option<Move>) {
+    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>) -> (Score, Option<Move>) {
         if depth == 0 {
             return (pos.evaluate(), None)
         }
@@ -109,7 +130,7 @@ impl Searcher {
             if pos.make_move(cm).is_err() {
                 continue
             }
-            let score = -1 * self.negamax(pos, depth - 1, ply + 1, -beta, -alpha).0;
+            let score = -1 * self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs).0;
             pos.unmake_move();
 
             // Use fail-soft version of alpha beta pruning.
