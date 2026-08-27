@@ -1,6 +1,4 @@
-use core::time;
 use std::{cmp::min, ops::Add, time::{Duration, Instant}};
-
 use crate::{Side, search::SearchLimits};
 
 
@@ -13,6 +11,14 @@ impl TimeCutoffs {
     // TODO: inject Instant compatible object for testing purposes.
     pub fn from_search_limit(limits: &SearchLimits, active_side: Side) -> Option<Self> {
         let now = Instant::now();
+        const OVERHEAD: Duration = Duration::from_millis(5);
+
+        // `movetime` fixes the budget for this move and overrides clock-based control.
+        // No soft/hard split: search until the deadline, minus a small overhead margin.
+        if let Some(movetime) = limits.movetime {
+            let budget = movetime.saturating_sub(OVERHEAD).max(Duration::from_millis(1));
+            return Some(TimeCutoffs { soft_limit: now + budget, hard_limit: now + budget });
+        }
 
         let (time_remaining, increment) = match active_side {
             Side::White => {
@@ -25,7 +31,7 @@ impl TimeCutoffs {
                 if limits.btime.is_none() {
                     return None
                 }
-                (limits.btime.unwrap(), limits.btime)
+                (limits.btime.unwrap(), limits.binc)
             }
         };
 

@@ -3,13 +3,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 
 use crate::basetypes::{MATE, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
 use crate::time_management::TimeCutoffs;
-use crate::transposition_table::{ActiveTranspositionTable, ScoreBound, TT};
+use crate::transposition_table::{ScoreBound, TT};
 
 /// Constraints on a single search call. All fields optional; interpretation
 /// (e.g. how clock time maps to a time budget) is up to the search implementation.
@@ -30,6 +30,12 @@ pub struct SearchResult {
     /// Principal variation, starting with `best_move`.
     pub pv: Vec<Move>,
     pub nodes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NegamaxResult {
+    pub best_move: Option<Move>,
+    pub score: Score,
 }
 
 #[derive(Debug)]
@@ -62,7 +68,7 @@ impl Searcher {
 
     fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits) -> SearchResult {
         // For now, no limit means 1. In future this should be an extremely large number.
-        let max_depth = if limits.depth.unwrap_or(0) == 0 { 0 } else { limits.depth.unwrap() };
+        let max_depth = limits.depth.unwrap_or(u8::MAX);
         let ply = 0;
         let alpha = -MATE; // Starting bounds for best move for current side
         let beta = MATE; // Starting bounds for best move for opponent side
@@ -73,7 +79,7 @@ impl Searcher {
 
         let mut score: Score = 0;
         let mut best_move = None;
-        let mut nodes_searched = 0;
+        let mut nodes_searched = 0; // Running total mutated from within negamax search
         
         for depth in 0..max_depth {
             if let Some(ref cutoffs) = time_cutoffs {
@@ -81,10 +87,9 @@ impl Searcher {
                     break;
                 }
             }
-            if let Some(search_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), 0) {
+            if let Some(search_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), &mut nodes_searched) {
                 score = search_result.score;
                 best_move = search_result.best_move;
-                nodes_searched += nodes_searched
             }
         }
 
@@ -109,12 +114,12 @@ impl Searcher {
     //   - best_move
     //   - nodes_searched
     //   - Search complete (not aborted)
-    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>, nodes_searched: u64) -> Option<SearchResult> {
-        let nodes_searched = nodes_searched + 1;
+    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>, nodes_searched: &mut u64) -> Option<NegamaxResult> {
+        *nodes_searched += 1;
 
         // Check if search is aborted or timed out
         // Only do every 2048 nodes as no need for more often
-        if nodes_searched & 2047 == 0 {
+        if *nodes_searched & 2047 == 0 {
             if let Some(cutoffs) = cutoffs {
                 if cutoffs.exceeded_hard() {
                     return None
@@ -126,7 +131,7 @@ impl Searcher {
         }
 
         if depth == 0 {
-            return Some(SearchResult{best_move: None, score: pos.evaluate(), pv: vec![], nodes: nodes_searched})
+            return Some(NegamaxResult {best_move: None, score: pos.evaluate()})
         }
 
         // Check the TT to see if this position is stored already
@@ -137,9 +142,9 @@ impl Searcher {
                 // This position has already been searched at a depth >= requested depth
                 // Return early if possible
                 match tt_hit.bound {
-                    ScoreBound::Exact => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
-                    ScoreBound::Lower if tt_hit.score >= beta => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
-                    ScoreBound::Upper if tt_hit.score <= alpha => return Some(SearchResult{best_move: tt_move, score: tt_hit.score, pv: vec![], nodes: nodes_searched}),
+                    ScoreBound::Exact => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
+                    ScoreBound::Lower if tt_hit.score >= beta => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
+                    ScoreBound::Upper if tt_hit.score <= alpha => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
                     _ => {}
                 }
             }
@@ -191,9 +196,9 @@ impl Searcher {
             // No move found, so game is over
             if pos.in_check() {
                 // Need to add ply in order to get the quickest path to checkmate (penalise longer paths)
-                return Some(SearchResult{best_move: None, score: -MATE + ply as Score, pv: vec![], nodes: nodes_searched})
+                return Some(NegamaxResult{best_move: None, score: -MATE + ply as Score})
             } else {
-                return Some(SearchResult { best_move: None, score: 0, pv: vec![], nodes: nodes_searched });
+                return Some(NegamaxResult { best_move: None, score: 0});
             }
         } else {
             // Store the Score + Move in the TT
@@ -212,6 +217,6 @@ impl Searcher {
             );
         }
 
-        Some(SearchResult{best_move: best_move, score: best_score, pv: vec![], nodes: nodes_searched})
+        Some(NegamaxResult{best_move: best_move, score: best_score})
     }
 }
