@@ -98,7 +98,9 @@ impl TranspositionTable {
         self.search_iteration.store(new_val, Ordering::Relaxed);
     }
 
-    fn index(&self, zobrist: u64) -> usize {
+    fn hash_zobrist(&self, zobrist: u64) -> usize {
+        // TODO: More efficient ways to do this if we assume table size is a power of 2. Maybe investigate in the future.
+
         // Given zobrist should be randomly distributed across u64, multiplying by num slots should randomly distribute 64 MSB
         // of a u128 across 0..(num slots).
         // alternative think of as 1/z * num_slots = randomly distributed int in 0..num_slots.
@@ -107,7 +109,7 @@ impl TranspositionTable {
 
     // Attempt to find an entry in the TT
     pub fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {
-        let entry = &self.entries[self.index(zobrist)];
+        let entry = &self.entries[self.hash_zobrist(zobrist)];
         let key = entry.key.load(Ordering::Relaxed);
         let data = entry.data.load(Ordering::Relaxed);
         if key ^ data != zobrist {
@@ -128,11 +130,8 @@ impl TranspositionTable {
     }
 
     pub fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {
-        let entry = &self.entries[self.index(zobrist)];
-        let old_key = entry.key.load(Ordering::Relaxed);
+        let entry = &self.entries[self.hash_zobrist(zobrist)];
         let old_data = entry.data.load(Ordering::Relaxed);
-        // Check if the retrieved data matches the current position
-        let table_hit_matches_position = old_key ^ old_data == zobrist;
 
         // Only replace if newer search or greater depth at same search
         let replace_slot = {
@@ -150,7 +149,9 @@ impl TranspositionTable {
         }
 
         // TODO: Future search enhancements may store bounds in TT without providing a move. Likely will need to modify the signature to allow None Move
-        // and if analysing the same position, use the found move instead.
+        // and if analysing the same position, use the found move instead. Must check the move is for the right position however
+        // let old_key = entry.key.load(Ordering::Relaxed);
+        // let table_hit_matches_position = old_key ^ old_data == zobrist;
 
         //TODO: as with fetch, factor out the mate bound + ply logic into common function
         let score = if score >= MATE_BOUND {

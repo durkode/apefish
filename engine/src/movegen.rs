@@ -319,11 +319,11 @@ impl MoveGen {
             for from_square in pos.pieces[pos.state.active_side][pk].iter_squares() {
                 match pk {
                     PieceKind::Queen => {
-                        self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, PieceKind::Queen, from_square);
-                        self.append_piece_moves(&mut moves, pos, PieceKind::Rook, PieceKind::Queen, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Bishop, from_square);
+                        self.append_piece_moves(&mut moves, pos, PieceKind::Rook, from_square);
                     },
                     _ => {
-                        self.append_piece_moves(&mut moves, pos, pk, pk, from_square);
+                        self.append_piece_moves(&mut moves, pos, pk, from_square);
                     },
                 }
             }
@@ -332,7 +332,7 @@ impl MoveGen {
         moves
     }
 
-    fn append_piece_moves(&self, moves: &mut Vec<Move>, pos: &Position, piece_kind_movement: PieceKind, piece_kind_actual: PieceKind, from_square: Square) {
+    fn append_piece_moves(&self, moves: &mut Vec<Move>, pos: &Position, piece_kind_movement: PieceKind, from_square: Square) {
         let active_side = pos.state.active_side;
         let other_side = active_side.other();
         let all_blockers = pos.sides_pieces[active_side] | pos.sides_pieces[other_side];
@@ -346,12 +346,12 @@ impl MoveGen {
                 // Push pawn forward if nothing in the way
                 let forward_push = from_square.bitboard().shift_offset(forward_direction_offset);
                 if all_blockers & forward_push == Bitboard::EMPTY {
-                    self.add_pawn_move(from_square, forward_push.single_square().unwrap(), active_side, None, false, moves);
+                    self.add_pawn_move(from_square, forward_push.single_square().unwrap(), active_side, moves);
                     // Now check if double push is possible
                     if (active_side == Side::White && from_square.rank() == Rank::R2) || (active_side == Side::Black && from_square.rank() == Rank::R7) {
                         let double_forward_push = forward_push.shift_offset(forward_direction_offset);
                         if all_blockers & double_forward_push == Bitboard::EMPTY {
-                            self.add_pawn_move(from_square, double_forward_push.single_square().unwrap(), active_side, None, false, moves);
+                            self.add_pawn_move(from_square, double_forward_push.single_square().unwrap(), active_side, moves);
                         }
                     }
                 }
@@ -363,10 +363,9 @@ impl MoveGen {
                     let dest_bb = from_square.bitboard().shift_offset(piece_move.offset);
                     if dest_bb & pos.sides_pieces[other_side] != Bitboard::EMPTY {
                         let to_square = dest_bb.single_square().unwrap();
-                        let captured = pos.piece_by_square[to_square].map(|x| x.kind);
-                        self.add_pawn_move(from_square, to_square, active_side, captured, false, moves);
+                        self.add_pawn_move(from_square, to_square, active_side, moves);
                     } else if dest_bb.single_square() == pos.state.en_passant {
-                        self.add_pawn_move(from_square, pos.state.en_passant.unwrap(), active_side, Some(PieceKind::Pawn), true, moves);
+                        self.add_pawn_move(from_square, pos.state.en_passant.unwrap(), active_side, moves);
                     }
                 }
 
@@ -418,7 +417,7 @@ impl MoveGen {
         }
     }
 
-    fn add_pawn_move(&self, from: Square, to: Square, active_side: Side, captured: Option<PieceKind>, en_passant: bool, moves: &mut Vec<Move>) {
+    fn add_pawn_move(&self, from: Square, to: Square, active_side: Side, moves: &mut Vec<Move>) {
         let promotion_options: &[Option<PieceKind>] = match (active_side, to.rank()) {
             (Side::White, Rank::R8) | (Side::Black, Rank::R1) => {
                 &[Some(PieceKind::Bishop), Some(PieceKind::Knight), Some(PieceKind::Rook), Some(PieceKind::Queen)]
