@@ -1,0 +1,44 @@
+# lichess-bot config for apefish. Bind-mounted read-only at
+# /lichess-bot/config.yml; edit and restart the container to change anything
+# here (no rebuild needed).
+#
+# Only token, url, engine.dir, engine.name and challenge are required by
+# lichess-bot; every other section falls back to built-in defaults.
+
+token: "provided-at-runtime-via-LICHESS_BOT_TOKEN"   # real token comes from the LICHESS_BOT_TOKEN env var
+url: "https://lichess.org/"
+
+engine:
+  dir: "./engines/"
+  name: "apefish"            # the wrapper script; it execs apefish.bin --uci
+  protocol: "uci"
+  ponder: false             # apefish pondering is still new; enable once validated
+  uci_options:
+    Hash: 2048               # MiB. The only spin option apefish implements.
+  silence_stderr: true
+
+# lichess-bot-side timing buffer subtracted from clock before each move. Raise
+# if apefish flags games; lower if it plays with too much time left.
+move_overhead: 2000
+
+challenge:                  # which incoming challenges to accept
+  concurrency: 4            # one game at a time
+  accept_bot: false
+  only_bot: false
+  variants:
+    - standard
+  time_controls:
+    - bullet
+    - blitz
+    - rapid
+  modes:
+    - casual
+    - rated
+  allow_list:
+    - RoryBrennan
+    - RupesLC
+    - durkadurk   # only this account may challenge the bot.
+                              # Delete this allow_list block to accept from anyone.
+
+matchmaking:
+  allow_matchmaking: false  # the bot does not seek out its own games

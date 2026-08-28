@@ -152,3 +152,81 @@ automated matches:
    to be set.
 3. Game → New Game, set one side to "Human" and the other to the `apefish`
    engine, then play.
+
+## Play on Lichess
+
+[`docker/`](docker/) packages apefish together with
+[lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) into a single
+OCI container, so the engine can accept and play challenges on
+[Lichess](https://lichess.org/) as a BOT account. The image is Python +
+lichess-bot + a statically linked (`x86_64-unknown-linux-musl`) apefish
+binary; `config.yml` is bind-mounted at runtime so it can be edited without
+rebuilding. [`docker/README.md`](docker/README.md) has the full runbook;
+the short version:
+
+### Prerequisites
+
+- `podman` (preferred, daemonless) or `docker`
+- `rustup` - `docker/build.sh` adds the `x86_64-unknown-linux-musl` target if
+  missing. If the musl link step fails: `sudo apt install musl-tools`.
+- A separate Lichess account for the bot, with **zero games played**, and an
+  OAuth token for it with the `bot:play` scope
+  (<https://lichess.org/account/oauth/token>).
+
+### One-time setup
+
+1. Save the token where the container will read it:
+
+   ```sh
+   mkdir -p ~/.config/apefish-bot
+   printf 'LICHESS_BOT_TOKEN=lip_xxxxxxxxxxxx\n' > ~/.config/apefish-bot/lichess.env
+   chmod 600 ~/.config/apefish-bot/lichess.env
+   ```
+
+2. In [`docker/config.yml`](docker/config.yml) set `challenge.allow_list` to
+   your main Lichess username (so only you can challenge the bot), or delete
+   that block to accept challenges from anyone.
+
+3. Build the image (compiles the engine on the host, then builds the image):
+
+   ```sh
+   docker/build.sh
+   ```
+
+4. Upgrade the bot account to a BOT account (irreversible):
+
+   ```sh
+   podman run --rm \
+     --env-file ~/.config/apefish-bot/lichess.env \
+     -v ~/projects/apefish/docker/config.yml:/lichess-bot/config.yml:ro \
+     apefish-bot:latest -u
+   ```
+
+### Run
+
+```sh
+podman run -d --name apefish-bot \
+  --env-file ~/.config/apefish-bot/lichess.env \
+  -v ~/projects/apefish/docker/config.yml:/lichess-bot/config.yml:ro \
+  apefish-bot:latest
+
+podman logs -f apefish-bot          # watch it connect and wait for challenges
+podman stop apefish-bot && podman rm apefish-bot
+```
+
+Then challenge it from your main account: open the bot's Lichess profile and
+click Challenge, or go to `lichess.org/?user=<botname>#friend`. lichess-bot
+auto-accepts challenges that match `config.yml` (standard, bullet/blitz/rapid,
+casual or rated).
+
+For an always-on setup that auto-restarts and survives reboots, install the
+Podman Quadlet unit [`docker/apefish-bot.container`](docker/apefish-bot.container)
+as a rootless user service - see [`docker/README.md`](docker/README.md), which
+also covers what to check when the bot doesn't come online.
+
+### Tuning
+
+- Games lost on time: raise `move_overhead` in `config.yml` (default `2000`
+  ms), restart the container. Start at blitz/rapid before enabling bullet.
+- Change accepted time controls: edit `challenge.time_controls`, restart.
+- Transposition table size: `engine.uci_options.Hash` (MiB), restart.

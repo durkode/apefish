@@ -1,0 +1,37 @@
+# Podman Quadlet unit for running the bot as a rootless user service that
+# restarts on failure and survives reboots.
+#
+# Install:
+#   mkdir -p ~/.config/containers/systemd
+#   ln -s ~/projects/apefish/docker/apefish-bot.container ~/.config/containers/systemd/
+#   loginctl enable-linger "$USER"        # run without an active login session
+#   systemctl --user daemon-reload
+#   systemctl --user start apefish-bot
+#   journalctl --user -u apefish-bot -f   # logs
+#
+# Adjust the two %h-relative paths below if your checkout or env file live
+# elsewhere.
+
+[Unit]
+Description=apefish Lichess bot (lichess-bot + apefish engine)
+After=network-online.target
+Wants=network-online.target
+# lichess-bot exits 0 even on fatal startup errors, so Restart=always below is
+# what actually recovers a transient failure (e.g. network not ready at boot).
+# Give up only if it fails repeatedly in a short window.
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Container]
+Image=localhost/apefish-bot:latest
+ContainerName=apefish-bot
+EnvironmentFile=%h/.config/apefish-bot/lichess.env
+Volume=%h/projects/apefish/docker/config.yml:/lichess-bot/config.yml:ro
+LogDriver=journald
+
+[Service]
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,40 @@
+# apefish served on Lichess via lichess-bot.
+#
+# Single stage: the engine is a static musl binary built on the host by
+# ./build.sh, so no Rust toolchain is needed in the image. This layer is just
+# Python + lichess-bot + the apefish binary.
+
+FROM docker.io/library/python:3.12-slim-bookworm
+
+# Pinned lichess-bot commit on master. The semver tags (1.1.x) are abandoned and
+# years out of date; modern lichess-bot lives on master only. Bump this SHA to
+# upgrade; it busts the ADD cache.
+ARG LICHESS_BOT_REF=df7e730de58cc3ef2f1415a0dc2eeda842d39167
+
+LABEL org.opencontainers.image.title="apefish-bot" \
+      org.opencontainers.image.description="apefish chess engine served on Lichess via lichess-bot" \
+      org.opencontainers.image.source="https://github.com/lichess-bot-devs/lichess-bot"
+
+ENV HOME=/lichess-bot \
+    PYTHONUNBUFFERED=1
+WORKDIR /lichess-bot
+
+# lichess-bot source (AGPL-3.0-or-later), pinned by commit, flattened into WORKDIR.
+ADD https://github.com/lichess-bot-devs/lichess-bot/archive/${LICHESS_BOT_REF}.tar.gz /tmp/lichess-bot.tar.gz
+RUN tar -xzf /tmp/lichess-bot.tar.gz --strip-components=1 -C /lichess-bot \
+ && rm /tmp/lichess-bot.tar.gz \
+ && pip install --no-cache-dir -r requirements.txt
+
+# apefish: host-built static binary + a wrapper that supplies the --uci flag
+# (lichess-bot launches the engine with no args of its own beyond UCI options).
+COPY apefish.bin /lichess-bot/engines/apefish.bin
+COPY apefish-uci /lichess-bot/engines/apefish
+RUN chmod +x /lichess-bot/engines/apefish.bin /lichess-bot/engines/apefish \
+ && chown -R 1000:1000 /lichess-bot
+
+USER 1000:1000
+
+# config.yml is bind-mounted at runtime. The OAuth token is read from the
+# LICHESS_BOT_TOKEN env var, which overrides the `token` field in config.yml.
+ENTRYPOINT ["python3", "lichess-bot.py"]
+CMD ["--disable_auto_logging"]

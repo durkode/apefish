@@ -1,0 +1,5 @@
+# Build context is this docker/ directory. Keep only what the image needs.
+README.md
+build.sh
+apefish-bot.container
+.containerignore

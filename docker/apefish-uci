@@ -1,0 +1,4 @@
+#!/bin/sh
+# lichess-bot launches this file as the UCI engine. apefish only speaks UCI when
+# given an explicit --uci flag, so add it here and hand off to the real binary.
+exec /lichess-bot/engines/apefish.bin --uci "$@"
