@@ -18,7 +18,10 @@ const TT_WALK_MAX_LENGTH: usize = 16; // Make length to go through TT to find th
 
 #[derive(Debug, Clone)]
 pub enum SearchCommand{
-    Stop
+    Stop,
+    /// The opponent played the move we were pondering on. Leave ponder mode and
+    /// start enforcing the time budget.
+    PonderHit,
 }
 
 struct PVTriangle {
@@ -105,6 +108,10 @@ pub struct SearchLimits {
     pub btime: Option<Duration>,
     pub winc: Option<Duration>,
     pub binc: Option<Duration>,
+    /// Search on the opponent's clock. Time cutoffs are ignored until a
+    /// [`SearchCommand::PonderHit`] arrives; until then only `Stop` ends the
+    /// search, and no `BestMove` is emitted.
+    pub ponder: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +135,10 @@ pub struct Searcher {
     tt: Arc<dyn TT>,
     commands: Receiver<SearchCommand>,
     stop: bool,
+    /// When this search must stop, and whether it is currently pondering.
+    /// `None` for unbounded searches (`go`, `go depth N`, `go infinite`).
+    /// Owns all ponder state; see [`TimeCutoffs`].
+    time_cutoffs: Option<TimeCutoffs>,
     last_stats_event_emitted: Option<Instant>,
 }
 
@@ -141,6 +152,7 @@ impl Searcher {
             tt: transposition_table,
             commands: commands,
             stop: false,
+            time_cutoffs: None,
             last_stats_event_emitted: None,
         }
     }
@@ -151,6 +163,7 @@ impl Searcher {
         loop {
             match self.commands.try_recv() {
                 Ok(SearchCommand::Stop) => self.stop = true,
+                Ok(SearchCommand::PonderHit) => self.note_ponder_hit(),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.stop = true;
@@ -160,12 +173,36 @@ impl Searcher {
         }
     }
 
+    /// Opponent played the pondered move: hand it to the cutoffs, which leave
+    /// ponder mode and start the clock.
+    fn note_ponder_hit(&mut self) {
+        if let Some(cutoffs) = self.time_cutoffs.as_mut() {
+            cutoffs.ponder_hit();
+        }
+    }
+
+    fn pondering(&self) -> bool {
+        self.time_cutoffs.as_ref().is_some_and(|c| c.is_pondering())
+    }
+
     // Main search entrypoint.
     // From this should branch into opening book, closing tables, or negamax.
     pub fn search(&mut self, pos: &mut Position, limits: &SearchLimits, send_event: &EventSink) {
-        
+
         // For now just call iterative deepening. In future add opening book calls to here as well
         let search_result = self.iterative_deepening(pos, limits, send_event);
+
+        // UCI forbids emitting `bestmove` while pondering. If the search
+        // exhausted its depth on its own before `ponderhit`/`stop` arrived,
+        // block until one of them does.
+        while !self.stop && self.pondering() {
+            match self.commands.recv() {
+                Ok(SearchCommand::Stop) => self.stop = true,
+                Ok(SearchCommand::PonderHit) => self.note_ponder_hit(),
+                Err(_) => break, // command channel dropped: fall through and finish
+            }
+        }
+
         send_event(EngineEvent::BestMove(search_result));
     }
 
@@ -176,7 +213,7 @@ impl Searcher {
         let alpha = -MATE; // Starting bounds for best move for current side
         let beta = MATE; // Starting bounds for best move for opponent side
 
-        let time_cutoffs = TimeCutoffs::from_search_limit(limits, pos.side_to_move());
+        self.time_cutoffs = TimeCutoffs::from_search_limit(limits, pos.side_to_move());
 
         self.tt.new_search(); // Set the correct search iteration now we are starting a new search
 
@@ -185,21 +222,18 @@ impl Searcher {
         let mut score: Score = 0;
         let mut best_move = None;
         let mut nodes_searched = 0; // Running total mutated from within negamax search
-        
+
         for depth in 0..max_depth {
-            if let Some(ref time_cutoff) = time_cutoffs {
-                if time_cutoff.exceeded_soft() {
-                    break;
-                }
+            if self.time_cutoffs.as_ref().is_some_and(|c| c.exceeded_soft()) {
+                break;
             }
             if let Some(negamax_result) = self.negamax(
-                pos, 
-                depth, 
-                ply, 
-                alpha, 
-                beta, 
-                time_cutoffs.as_ref(), 
-                &mut nodes_searched, 
+                pos,
+                depth,
+                ply,
+                alpha,
+                beta,
+                &mut nodes_searched,
                 &mut pv_triangle,
                 send_event,
             ) {
@@ -244,14 +278,13 @@ impl Searcher {
     //   - nodes_searched
     //   - Search complete (not aborted)
     fn negamax(
-        &mut self, pos: 
-        &mut Position, 
-        depth: u8, 
-        ply: usize, 
-        mut alpha: Score, 
-        beta: Score, 
-        cutoffs: Option<&TimeCutoffs>, 
-        nodes_searched: &mut u64, 
+        &mut self, pos:
+        &mut Position,
+        depth: u8,
+        ply: usize,
+        mut alpha: Score,
+        beta: Score,
+        nodes_searched: &mut u64,
         pv: &mut Box<PVTriangle>,
         send_event: &EventSink
     ) -> Option<NegamaxResult> {
@@ -267,10 +300,10 @@ impl Searcher {
             if self.stop {
                 return None
             }
-            if let Some(cutoffs) = cutoffs {
-                if cutoffs.exceeded_hard() {
-                    return None
-                }
+            // `exceeded_hard` is always false while pondering, so this keeps
+            // running until `ponderhit` (which starts the clock) or `stop`.
+            if self.time_cutoffs.as_ref().is_some_and(|c| c.exceeded_hard()) {
+                return None
             }
 
             // Emit an info event if time has elapsed
@@ -326,7 +359,7 @@ impl Searcher {
             if pos.make_move(cm).is_err() {
                 continue
             }
-            let subsearch = self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs, nodes_searched, pv, send_event);
+            let subsearch = self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, nodes_searched, pv, send_event);
             pos.unmake_move();
 
             if subsearch.is_none() {

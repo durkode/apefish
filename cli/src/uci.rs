@@ -125,7 +125,7 @@ pub fn parse_uci_move(s: &str) -> Option<UnvalidatedMove> {
 }
 
 /// Parse the argument tail of a `go` command into [`SearchLimits`].
-/// Tokens this engine doesn't act on yet (`ponder`, `infinite`, `nodes`, `mate`,
+/// Tokens this engine doesn't act on yet (`infinite`, `nodes`, `mate`,
 /// `searchmoves`, ...) are skipped rather than rejected.
 pub fn parse_go_limits(args: &str) -> SearchLimits {
     let tokens: Vec<&str> = args.split_whitespace().collect();
@@ -157,6 +157,10 @@ pub fn parse_go_limits(args: &str) -> SearchLimits {
             "binc" => {
                 limits.binc = value_ms().map(Duration::from_millis);
                 i += 2;
+            }
+            "ponder" => {
+                limits.ponder = true;
+                i += 1;
             }
             _ => {
                 i += 1;
@@ -279,6 +283,7 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
             format!(
                 "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
             ),
+            "option name Ponder type check default false".to_string(),
             "uciok".to_string(),
         ]),
         "isready" => CommandOutcome::Continue(vec!["readyok".to_string()]),
@@ -305,6 +310,10 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
             engine.stop();
             CommandOutcome::Continue(vec![])
         }
+        "ponderhit" => {
+            engine.ponder_hit();
+            CommandOutcome::Continue(vec![])
+        }
         "quit" => CommandOutcome::Quit,
         "setoption" => {
             if let Some((name, value)) = parse_setoption(rest) {
@@ -321,7 +330,7 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
             CommandOutcome::Continue(vec![])
         }
         // These carry no state this engine acts on yet, so they are accepted no-ops.
-        "debug" | "register" | "ponderhit" => CommandOutcome::Continue(vec![]),
+        "debug" | "register" => CommandOutcome::Continue(vec![]),
         // Unrecognized input is ignored, per UCI's robustness expectations.
         _ => CommandOutcome::Continue(vec![]),
     }

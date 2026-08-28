@@ -102,6 +102,12 @@ pub trait Engine {
     /// [`EngineEvent::BestMove`] is delivered through the sink before this
     /// returns. A no-op if no search is running.
     fn stop(&mut self);
+
+    /// Tell a running ponder search (started via [`SearchLimits::ponder`]) that
+    /// the opponent played the pondered move. The search keeps running but now
+    /// enforces its time budget and will emit a [`EngineEvent::BestMove`] as
+    /// usual. A no-op if no search is running.
+    fn ponder_hit(&mut self);
 }
 
 /// The concrete apefish engine implementing [`Engine`].
@@ -255,5 +261,11 @@ impl Engine for Apefish {
 
     fn stop(&mut self) {
         self.finish_search(false);
+    }
+
+    fn ponder_hit(&mut self) {
+        if let Some(in_progress) = &self.search_in_progress {
+            let _ = in_progress.send_command.send(SearchCommand::PonderHit);
+        }
     }
 }

@@ -77,10 +77,17 @@ fn go_limits_clock_params() {
 }
 
 #[test]
-fn go_limits_ignores_unknown_tokens() {
+fn go_limits_parses_ponder_and_ignores_unknown_tokens() {
     let limits = parse_go_limits("infinite ponder depth 3");
     assert_eq!(limits.depth, Some(3));
     assert_eq!(limits.movetime, None);
+    assert!(limits.ponder);
+}
+
+#[test]
+fn go_limits_no_ponder_by_default() {
+    let limits = parse_go_limits("depth 3");
+    assert!(!limits.ponder);
 }
 
 #[test]
@@ -97,6 +104,7 @@ fn handle_line_uci() {
                     format!(
                         "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
                     ),
+                    "option name Ponder type check default false".to_string(),
                     "uciok".to_string(),
                 ]
             );
@@ -115,6 +123,50 @@ fn handle_line_uci_advertises_hash_option() {
     assert!(lines.contains(&format!(
         "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
     )));
+}
+
+#[test]
+fn handle_line_uci_advertises_ponder_option() {
+    let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
+    let CommandOutcome::Continue(lines) = handle_line(&mut engine, "uci", &tx) else {
+        panic!("expected Continue");
+    };
+    assert!(lines.contains(&"option name Ponder type check default false".to_string()));
+}
+
+#[test]
+fn handle_line_ponderhit_without_search_is_noop() {
+    let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
+    match handle_line(&mut engine, "ponderhit", &tx) {
+        CommandOutcome::Continue(lines) => assert!(lines.is_empty()),
+        CommandOutcome::Quit => panic!("expected Continue"),
+    }
+}
+
+#[test]
+fn ponder_search_withholds_bestmove_until_ponderhit() {
+    let mut engine = Apefish::new(0);
+    let (tx, rx) = event_channel();
+
+    handle_line(&mut engine, "position startpos moves e2e4", &tx);
+    // Depth-limited so the search exhausts its work almost immediately; a
+    // non-pondering search would emit `bestmove` right away.
+    handle_line(&mut engine, "go ponder depth 3", &tx);
+
+    // Drain progress events; assert no BestMove arrives while pondering.
+    let deadline = std::time::Instant::now() + Duration::from_millis(300);
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(Msg::Engine(EngineEvent::BestMove(_))) => panic!("bestmove emitted while pondering"),
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+
+    handle_line(&mut engine, "ponderhit", &tx);
+    assert!(recv_bestmove(&rx).best_move.is_some());
 }
 
 #[test]
