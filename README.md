@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apefish_logo.jpeg" alt="apefish" width="480">
+</p>
+
 NOTE: This repo is not ready for use yet. This readme is just an AI generated file, I will hand write and make clearer once it is ready for use.
 
 The core of the engine is nearly all hand written, the UCI client, docs, tests, are nearly all AI generated for now, and need some cleanup before I'd put my name behind it.
