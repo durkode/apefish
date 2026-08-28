@@ -80,6 +80,32 @@ pub enum CommandOutcome {
     Quit,
 }
 
+/// Transposition table size in MiB used when the GUI sends no `setoption name Hash`.
+/// Also advertised as the `Hash` option's `default`.
+pub const DEFAULT_HASH_MB: usize = 512;
+
+/// Lower/upper bounds advertised for the `Hash` option and enforced on `setoption`.
+pub const MIN_HASH_MB: usize = 1;
+pub const MAX_HASH_MB: usize = 65536;
+
+/// Parse a `setoption name <id> [value <val>]` tail into `(name, value)`.
+/// `name` may contain spaces; `value` is everything after the `value` token
+/// (absent for button options). Returns `None` if the `name` token is missing.
+pub fn parse_setoption(args: &str) -> Option<(String, Option<String>)> {
+    let tokens: Vec<&str> = args.split_whitespace().collect();
+    if tokens.first() != Some(&"name") {
+        return None;
+    }
+    let value_pos = tokens.iter().position(|&t| t == "value");
+    let name_end = value_pos.unwrap_or(tokens.len());
+    let name = tokens[1..name_end].join(" ");
+    if name.is_empty() {
+        return None;
+    }
+    let value = value_pos.map(|p| tokens[p + 1..].join(" "));
+    Some((name, value))
+}
+
 /// Parse a UCI long-algebraic move (e.g. "e2e4", "e7e8q") into an [`UnvalidatedMove`].
 pub fn parse_uci_move(s: &str) -> Option<UnvalidatedMove> {
     if s.len() != 4 && s.len() != 5 {
@@ -250,6 +276,9 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
         "uci" => CommandOutcome::Continue(vec![
             "id name apefish".to_string(),
             "id author Hamish Durkin".to_string(),
+            format!(
+                "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
+            ),
             "uciok".to_string(),
         ]),
         "isready" => CommandOutcome::Continue(vec!["readyok".to_string()]),
@@ -277,16 +306,34 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
             CommandOutcome::Continue(vec![])
         }
         "quit" => CommandOutcome::Quit,
-        // No configurable options are exposed yet, so these are accepted no-ops.
-        "setoption" | "debug" | "register" | "ponderhit" => CommandOutcome::Continue(vec![]),
+        "setoption" => {
+            if let Some((name, value)) = parse_setoption(rest) {
+                if name.eq_ignore_ascii_case("Hash") {
+                    match value.as_deref().and_then(|v| v.parse::<usize>().ok()) {
+                        Some(mb) => {
+                            engine.set_hash_size(mb.clamp(MIN_HASH_MB, MAX_HASH_MB));
+                        }
+                        None => eprintln!("apefish: malformed setoption Hash value: {rest}"),
+                    }
+                }
+                // Unknown option names are ignored, per UCI.
+            }
+            CommandOutcome::Continue(vec![])
+        }
+        // These carry no state this engine acts on yet, so they are accepted no-ops.
+        "debug" | "register" | "ponderhit" => CommandOutcome::Continue(vec![]),
         // Unrecognized input is ignored, per UCI's robustness expectations.
         _ => CommandOutcome::Continue(vec![]),
     }
 }
 
 /// Run the UCI protocol loop over stdin/stdout until `quit` or EOF.
-pub fn run() {
-    let mut engine = Apefish::new(512);
+///
+/// `hash_mb` is the initial transposition table size in MiB (see the `--hash`
+/// CLI flag and [`DEFAULT_HASH_MB`]). The GUI can still change it at runtime
+/// with `setoption name Hash value <mb>`.
+pub fn run(hash_mb: usize) {
+    let mut engine = Apefish::new(hash_mb);
     let (tx, rx) = mpsc::channel::<Msg>();
     let logger = Arc::new(Logger::from_env());
 

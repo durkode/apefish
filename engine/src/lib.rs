@@ -119,10 +119,7 @@ impl Apefish {
     pub fn new(tt_size_in_mb: usize) -> Self {
         let zobrists = Arc::new(ZobristRandoms::new());
         let movegen = Arc::new(MoveGen::init());
-        let tt: Arc<dyn TT> = match tt_size_in_mb {
-            0 => Arc::new(NoopTranspositionTable),
-            _ => Arc::new(ActiveTranspositionTable::new(16)),
-        };
+        let tt = Self::build_tt(tt_size_in_mb);
         let pos = Position::new(zobrists.clone(), movegen.clone());
         Apefish {
             position: pos,
@@ -131,6 +128,26 @@ impl Apefish {
             search_in_progress: None,
             tt: tt
         }
+    }
+
+    /// Build a transposition table of `size_in_mb` megabytes. `0` selects the
+    /// no-op table (used by tests and non-search callers).
+    fn build_tt(size_in_mb: usize) -> Arc<dyn TT> {
+        match size_in_mb {
+            0 => Arc::new(NoopTranspositionTable),
+            mb => Arc::new(ActiveTranspositionTable::new(mb)),
+        }
+    }
+
+    /// Replace the transposition table with a fresh one of `size_in_mb`
+    /// megabytes, discarding all cached entries.
+    ///
+    /// Per the UCI spec, `setoption` is only sent while the engine is idle, so
+    /// normally no search is running. If one is, it keeps its own handle to the
+    /// old table and finishes on it undisturbed; the new size takes effect on
+    /// the next `go`.
+    pub fn set_hash_size(&mut self, size_in_mb: usize) {
+        self.tt = Self::build_tt(size_in_mb);
     }
 
     fn finish_search(&mut self, suppress_events: bool) {

@@ -27,6 +27,12 @@ struct TTEntry {
     data: AtomicU64
 }
 
+impl TTEntry {
+    pub fn is_data_empty(&self) -> bool {
+        self.data.load(Ordering::Relaxed) == 0
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct TTHit {
     pub mv: Move,
@@ -77,6 +83,8 @@ pub trait TT: Debug + Send + Sync {
     fn new_search(&self);
     fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit>;
     fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32);
+    // Number of first 1000 slots that are full
+    fn hashfull(&self) -> u16;
 }
 
 #[derive(Debug)]
@@ -117,6 +125,13 @@ impl TT for ActiveTranspositionTable {
         self.search_iteration.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
             Some(v.wrapping_add(1) & SEARCH_ITERATION_NUM_MASK)
         }).unwrap();
+    }
+
+    fn hashfull(&self) -> u16 {
+        if self.entries.len() < 1000 {
+            return 0; // Not supported for tiny hash tables
+        }
+        self.entries[..1000].iter().filter(|x| !x.is_data_empty()).count() as u16
     }
 
     // Attempt to find an entry in the TT
@@ -197,6 +212,7 @@ impl TT for NoopTranspositionTable {
     fn fetch(&self, zobrist: u64, ply: usize) -> Option<TTHit> {None}
     #[allow(unused_variables)]
     fn store(&self, zobrist: u64, mv: Move, score: Score, bound: ScoreBound, depth: u8, ply: i32) {}
+    fn hashfull(&self) -> u16 { 0 }
 }
 
 #[cfg(test)]

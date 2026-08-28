@@ -6,9 +6,20 @@
 
 use apefish_engine::{Apefish, Engine, UnvalidatedMove, Square};
 
+use apefish_cli::uci::DEFAULT_HASH_MB;
+
 fn main() {
-    if std::env::args().skip(1).any(|a| a == "--uci") {
-        apefish_cli::uci::run();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if args.iter().any(|a| a == "--uci") {
+        let hash_mb = match parse_hash_arg(&args) {
+            Ok(mb) => mb,
+            Err(msg) => {
+                eprintln!("apefish: {msg}");
+                std::process::exit(2);
+            }
+        };
+        apefish_cli::uci::run(hash_mb);
         return;
     }
 
@@ -54,6 +65,30 @@ fn main() {
 
 }
 
+/// Parse an optional `--hash <MB>` / `--hash=<MB>` flag, returning
+/// [`DEFAULT_HASH_MB`] when it is absent. `0` disables the transposition table.
+fn parse_hash_arg(args: &[String]) -> Result<usize, String> {
+    for (i, arg) in args.iter().enumerate() {
+        let raw = if let Some(val) = arg.strip_prefix("--hash=") {
+            Some(val.to_string())
+        } else if arg == "--hash" {
+            Some(
+                args.get(i + 1)
+                    .ok_or_else(|| "--hash requires a value in MB".to_string())?
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        if let Some(raw) = raw {
+            return raw
+                .parse::<usize>()
+                .map_err(|_| format!("invalid --hash value: {raw}"));
+        }
+    }
+    Ok(DEFAULT_HASH_MB)
+}
+
 // /// Render the current position to the terminal.
 // fn print_board(_engine: &Apefish) {
 //     unimplemented!()
@@ -73,3 +108,37 @@ fn main() {
 // fn print_result(status: GameStatus) {
 //     unimplemented!()
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn hash_arg_defaults_when_absent() {
+        assert_eq!(parse_hash_arg(&args(&["--uci"])), Ok(DEFAULT_HASH_MB));
+    }
+
+    #[test]
+    fn hash_arg_space_form() {
+        assert_eq!(parse_hash_arg(&args(&["--uci", "--hash", "128"])), Ok(128));
+    }
+
+    #[test]
+    fn hash_arg_equals_form() {
+        assert_eq!(parse_hash_arg(&args(&["--hash=64", "--uci"])), Ok(64));
+    }
+
+    #[test]
+    fn hash_arg_rejects_non_numeric() {
+        assert!(parse_hash_arg(&args(&["--uci", "--hash", "abc"])).is_err());
+    }
+
+    #[test]
+    fn hash_arg_rejects_missing_value() {
+        assert!(parse_hash_arg(&args(&["--uci", "--hash"])).is_err());
+    }
+}

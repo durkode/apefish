@@ -281,7 +281,7 @@ impl Searcher {
                     EngineEvent::Stats { 
                         depth: depth + ply as u8, // TODO: this will break with future search extensions, store root depth on the search object
                         nodes: *nodes_searched, 
-                        hashfull: 0, 
+                        hashfull: self.tt.hashfull(), 
                         tbhits: 0 
                     }
                 );

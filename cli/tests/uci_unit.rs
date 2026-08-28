@@ -5,7 +5,10 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use apefish_cli::uci::{handle_line, parse_go_limits, parse_uci_move, CommandOutcome, Msg};
+use apefish_cli::uci::{
+    handle_line, parse_go_limits, parse_setoption, parse_uci_move, CommandOutcome, Msg,
+    DEFAULT_HASH_MB, MAX_HASH_MB, MIN_HASH_MB,
+};
 use apefish_engine::search::SearchResult;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square};
 
@@ -91,10 +94,69 @@ fn handle_line_uci() {
                 vec![
                     "id name apefish".to_string(),
                     "id author Hamish Durkin".to_string(),
+                    format!(
+                        "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
+                    ),
                     "uciok".to_string(),
                 ]
             );
         }
+        CommandOutcome::Quit => panic!("expected Continue"),
+    }
+}
+
+#[test]
+fn handle_line_uci_advertises_hash_option() {
+    let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
+    let CommandOutcome::Continue(lines) = handle_line(&mut engine, "uci", &tx) else {
+        panic!("expected Continue");
+    };
+    assert!(lines.contains(&format!(
+        "option name Hash type spin default {DEFAULT_HASH_MB} min {MIN_HASH_MB} max {MAX_HASH_MB}"
+    )));
+}
+
+#[test]
+fn parse_setoption_hash() {
+    assert_eq!(
+        parse_setoption("name Hash value 256"),
+        Some(("Hash".to_string(), Some("256".to_string())))
+    );
+}
+
+#[test]
+fn parse_setoption_multiword_name() {
+    assert_eq!(
+        parse_setoption("name Clear Hash"),
+        Some(("Clear Hash".to_string(), None))
+    );
+}
+
+#[test]
+fn parse_setoption_missing_name_token() {
+    assert_eq!(parse_setoption("Hash value 256"), None);
+}
+
+#[test]
+fn handle_line_setoption_hash_is_accepted() {
+    let mut engine = Apefish::new(DEFAULT_HASH_MB);
+    let (tx, rx) = event_channel();
+    match handle_line(&mut engine, "setoption name Hash value 64", &tx) {
+        CommandOutcome::Continue(lines) => assert!(lines.is_empty()),
+        CommandOutcome::Quit => panic!("expected Continue"),
+    }
+    // The resized table still drives a normal search to completion.
+    handle_line(&mut engine, "go depth 1", &tx);
+    assert!(recv_bestmove(&rx).best_move.is_some());
+}
+
+#[test]
+fn handle_line_setoption_unknown_option_is_noop() {
+    let mut engine = Apefish::new(0);
+    let (tx, _rx) = event_channel();
+    match handle_line(&mut engine, "setoption name Threads value 4", &tx) {
+        CommandOutcome::Continue(lines) => assert!(lines.is_empty()),
         CommandOutcome::Quit => panic!("expected Continue"),
     }
 }
