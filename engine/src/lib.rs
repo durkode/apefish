@@ -19,12 +19,12 @@ mod tests;
 mod transposition_table;
 mod time_management;
 
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, thread::{self, JoinHandle}};
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread::{self, JoinHandle}};
 
 pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchLimits, SearchResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchCommand, SearchLimits, SearchResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
 
 
 /// Event that the engine emits into a channel read by the client
@@ -50,6 +50,13 @@ pub enum EngineEvent {
 
     /// End of search result.
     BestMove(SearchResult),
+}
+
+#[derive(Debug)]
+pub struct SearchHandle {
+    search_thread: JoinHandle<()>,
+    send_command: mpsc::Sender<SearchCommand>,
+    suppress_events: Arc<AtomicBool>,
 }
 
 /// Sink the engine calls to publish [`EngineEvent`]s. It is invoked from the
@@ -104,13 +111,8 @@ pub struct Apefish {
     position: Position,
     movegen: Arc<MoveGen>,
     zobrist_randoms: Arc<ZobristRandoms>,
-    searcher: Searcher,
-    // Has the stop command been issued.
-    stop_search: Arc<AtomicBool>,
-    // Stop the search from emitting events
-    // Used when a new search is started before the old search finishes.
-    suppress_emitting_events: Arc<AtomicBool>,
-    search: Option<JoinHandle<()>> // Join handle for currently running search
+    search_in_progress: Option<SearchHandle>,
+    tt: Arc<dyn TT>,
 }
 
 impl Apefish {
@@ -121,42 +123,25 @@ impl Apefish {
             0 => Arc::new(NoopTranspositionTable),
             _ => Arc::new(ActiveTranspositionTable::new(16)),
         };
-        let stop_search = Arc::new(AtomicBool::new(false));
-        let suppress_emitting_events_handle = Arc::new(AtomicBool::new(false));
-        let searcher = Searcher::new(
-            movegen.clone(), 
-            tt, 
-            stop_search.clone(),
-        );
         let pos = Position::new(zobrists.clone(), movegen.clone());
-        Apefish { 
-            position: pos, 
+        Apefish {
+            position: pos,
             movegen:  movegen,
             zobrist_randoms: zobrists,
-            searcher: searcher,
-            stop_search: stop_search,
-            suppress_emitting_events: suppress_emitting_events_handle,
-            search: None
+            search_in_progress: None,
+            tt: tt
         }
     }
 
     fn finish_search(&mut self, suppress_events: bool) {
         // Check we don't have an existing search running, and clean up if it is.
-        if let Some(search_handle) = self.search.take() {
-            if !search_handle.is_finished() {
-                if suppress_events {
-                    self.suppress_emitting_events.store(true, Ordering::Relaxed);
-                }
-                self.stop_search.store(true, Ordering::Relaxed);
+        if let Some(in_progress) = self.search_in_progress.take() {
+            if suppress_events {
+                in_progress.suppress_events.store(true, Ordering::Relaxed);
             }
-            let _ = search_handle.join();
+            let _ = in_progress.send_command.send(SearchCommand::Stop);
+            let _ = in_progress.search_thread.join();
         }
-    }
-
-    fn reset_search_interrupts(&mut self) {
-        // Clear the halt flags from previous search
-        self.stop_search.store(false, Ordering::Relaxed);
-        self.suppress_emitting_events.store(false, Ordering::Relaxed);
     }
 
     pub fn print_debug_state(&self) {
@@ -225,19 +210,30 @@ impl Engine for Apefish {
 
     fn go(&mut self, limits: SearchLimits, send_event: EventSink) {
         self.finish_search(true);
-        self.reset_search_interrupts();
 
-        let mut searcher = self.searcher.clone();
         let mut position = self.position.clone();
-        let suppress_emitting_events = self.suppress_emitting_events.clone();
+        let suppress_events = Arc::new(AtomicBool::new(false));
+        let gate = suppress_events.clone();
         let gated_send_event: EventSink = Box::new(move |x| {
-            if !suppress_emitting_events.load(Ordering::Relaxed) {
+            if !gate.load(Ordering::Relaxed) {
                 send_event(x)
             }
         });
-        self.search = Some(thread::spawn(move || {
-            searcher.search(&mut position, &limits, &gated_send_event);
-        }));
+
+        let (send_command, commands) = mpsc::channel();
+        let mut searcher = Searcher::new(
+            self.movegen.clone(),
+            self.tt.clone(),
+            commands,
+        );
+
+        self.search_in_progress = Some(SearchHandle {
+            search_thread: thread::spawn(move || {
+                searcher.search(&mut position, &limits, &gated_send_event);
+            }),
+            send_command,
+            suppress_events,
+        });
     }
 
     fn stop(&mut self) {

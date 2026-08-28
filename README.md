@@ -24,7 +24,8 @@ cargo build -p apefish-engine   # just the engine
 ## Test
 
 ```sh
-cargo test                      # whole workspace
+cargo nextest run               # all test in parallel
+cargo test                      # whole workspace, each suite 1 at a time
 cargo test -p apefish-engine    # just the engine's tests
 ```
 

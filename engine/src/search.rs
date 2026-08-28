@@ -1,7 +1,7 @@
 //! Search: choosing a move under time/depth constraints.
 
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::zobrist::ZobristKey;
@@ -15,6 +15,11 @@ use crate::transposition_table::{ScoreBound, TT};
 
 const STATS_EVENT_INTERVAL: Duration = Duration::from_millis(200);
 const TT_WALK_MAX_LENGTH: usize = 16; // Make length to go through TT to find the PV line
+
+#[derive(Debug, Clone)]
+pub enum SearchCommand{
+    Stop
+}
 
 struct PVTriangle {
     pv: [[Move; MAX_PLY]; MAX_PLY], // The PV for a given ply
@@ -117,11 +122,12 @@ pub struct NegamaxResult {
     pub score: Score,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Searcher {
     movegen: Arc<MoveGen>,
     tt: Arc<dyn TT>,
-    stop: Arc<AtomicBool>,
+    commands: Receiver<SearchCommand>,
+    stop: bool,
     last_stats_event_emitted: Option<Instant>,
 }
 
@@ -129,15 +135,30 @@ pub struct Searcher {
 // It is just conceptually cleaner.
 impl Searcher {
 
-    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>, stop: Arc<AtomicBool>) -> Self {
+    pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>, commands: Receiver<SearchCommand>) -> Self {
         Searcher {
             movegen: movegen,
             tt: transposition_table,
-            stop: stop,
+            commands: commands,
+            stop: false,
             last_stats_event_emitted: None,
         }
     }
 
+    // Drain all pending commands from the channel without blocking. Called
+    // periodically from within the search.
+    fn drain_commands(&mut self) {
+        loop {
+            match self.commands.try_recv() {
+                Ok(SearchCommand::Stop) => self.stop = true,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.stop = true;
+                    break
+                }
+            }
+        }
+    }
 
     // Main search entrypoint.
     // From this should branch into opening book, closing tables, or negamax.
@@ -242,13 +263,14 @@ impl Searcher {
         // Check if search is aborted or timed out
         // Only do every 2048 nodes as no need for more often
         if *nodes_searched & 2047 == 0 {
+            self.drain_commands();
+            if self.stop {
+                return None
+            }
             if let Some(cutoffs) = cutoffs {
                 if cutoffs.exceeded_hard() {
                     return None
                 }
-            }
-            if self.stop.load(Ordering::Relaxed) {
-                return None
             }
 
             // Emit an info event if time has elapsed
