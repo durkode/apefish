@@ -26,17 +26,15 @@ impl<K: Eq + Hash> MultiSet<K> {
 
     pub fn remove(&mut self, key: K) -> Result<(), MultiSetErr>{
         match self.counts.entry(key) {
-            Occupied(x) => {
+            Occupied(mut x) => {
+                *x.get_mut() -= 1;
                 if *x.get() == 0 {
                     x.remove();
-                } else {
-                    *x.into_mut() -= 1;
                 }
-                return Ok(())
+                Ok(())
             },
-            Vacant(_) => {
-                return Err(MultiSetErr::KeyDoesNotExist)
-            }
+            Vacant(_) => Err(MultiSetErr::KeyDoesNotExist)
+            
         }
     }
 
