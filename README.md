@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apefish_logo.jpeg" alt="apefish" width="480">
+  <img src="apefish_logo.jpeg" alt="apefish" width="720">
 </p>
 
 NOTE: This repo is not ready for use yet. This readme is just an AI generated file, I will hand write and make clearer once it is ready for use.
