@@ -42,21 +42,18 @@ impl PVTriangle {
         self.pv_length[ply] = self.pv_length[ply + 1] + 1;
     }
 
-    pub fn get_pv(&self, pos: &Position, tt: &dyn TT) -> Vec<Move> {
+    pub fn get_pv(&self, pos: &mut Position, tt: &dyn TT) -> Vec<Move> {
         // TODO: I thought this would consume self.pv, but given it is not mut it can't
         //       Investigate this.
         // TODO: probably should move this to the searcher, rather than doing this on the pvtriangle struct
         let mut pv = Vec::from(&self.pv[0][..self.pv_length[0]]);
-        // Note probably more efficient to not clone the pos, but given this isn't on the hot path (only on each iterative deepening)
-        // it shouldn't really matter
-        let mut curr_pos = pos.clone();
         
         // First, walk the pv line as far as possible
         // Note that the pv line might be corrupted due to a search aborted halfway through,
         // So treat each move as a possible failure. Verify against the board
         let mut valid_length = 0;
         for &mv in &pv {
-            if curr_pos.make_move(mv).is_err() {
+            if pos.make_move(mv).is_err() {
                 break
             }
             valid_length += 1;
@@ -68,20 +65,25 @@ impl PVTriangle {
         // And we want to cap the length at a reasonable walk (TT_WALK_MAX_LENGTH)
         let mut visited_zobrists = [ZobristKey::default(); TT_WALK_MAX_LENGTH];
         let mut walk_counter = 0;
-        let mut curr_zobrist = curr_pos.get_zobrist();
+        let mut curr_zobrist = pos.get_zobrist();
 
         while let Some(tt_hit) = tt.fetch(curr_zobrist, pv.len()) {
-            if curr_pos.make_move(tt_hit.mv).is_err() {
+            if pos.make_move(tt_hit.mv).is_err() {
                 break
             }
             pv.push(tt_hit.mv);
             visited_zobrists[walk_counter] = curr_zobrist;
             walk_counter += 1;
-            curr_zobrist = curr_pos.get_zobrist();
+            curr_zobrist = pos.get_zobrist();
             if walk_counter >= TT_WALK_MAX_LENGTH || visited_zobrists.contains(&curr_zobrist) {
                 break
             }
         };
+
+        // Now unwind all the made moves used in validation
+        for _ in 0..pv.len() {
+            pos.unmake_move();
+        }
 
         pv
     }
