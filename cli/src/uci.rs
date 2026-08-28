@@ -7,13 +7,60 @@
 //! every input line and every [`EngineEvent`] into one `mpsc` queue, so the main
 //! loop can service `stop`/`isready` while a `go` search is still running.
 
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use apefish_engine::search::SearchLimits;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square, UnvalidatedMove};
+
+/// Optional trace log of the UCI conversation, for debugging stalls.
+///
+/// Enabled by setting `APEFISH_UCI_LOG` to a file path. Every line received from
+/// the GUI is logged with `>>`, every line sent with `<<`, and internal markers
+/// with `--`; each entry carries a wall-clock timestamp so a hang shows up as a
+/// gap between the last line in and the next line out. A no-op (zero overhead
+/// beyond a branch) when the variable is unset.
+pub struct Logger(Option<Mutex<File>>);
+
+impl Logger {
+    pub fn from_env() -> Self {
+        let Some(path) = std::env::var_os("APEFISH_UCI_LOG") else {
+            return Logger(None);
+        };
+        match OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(file) => {
+                let logger = Logger(Some(Mutex::new(file)));
+                logger.mark("--- session start ---");
+                logger
+            }
+            Err(e) => {
+                eprintln!("apefish: cannot open APEFISH_UCI_LOG {path:?}: {e}");
+                Logger(None)
+            }
+        }
+    }
+
+    /// `dir` is the direction tag: `">>"` received, `"<<"` sent, `"--"` internal.
+    pub fn log(&self, dir: &str, text: &str) {
+        let Some(file) = &self.0 else { return };
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| format!("{}.{:03}", d.as_secs(), d.subsec_millis()))
+            .unwrap_or_default();
+        if let Ok(mut file) = file.lock() {
+            let _ = writeln!(file, "{ts} {dir} {text}");
+            let _ = file.flush();
+        }
+    }
+
+    fn mark(&self, text: &str) {
+        self.log("--", text);
+    }
+}
 
 /// Everything the main loop waits on: a line typed by the GUI, an event from the
 /// engine's search thread, or the end of stdin.
@@ -241,18 +288,22 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
 pub fn run() {
     let mut engine = Apefish::new(512);
     let (tx, rx) = mpsc::channel::<Msg>();
+    let logger = Arc::new(Logger::from_env());
 
     // Dedicated stdin reader: turns each line into a `Msg` so the main loop only
     // ever waits on one queue, and stays responsive during a search.
     let stdin_tx = tx.clone();
+    let stdin_logger = Arc::clone(&logger);
     thread::spawn(move || {
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
+            stdin_logger.log(">>", &line);
             if stdin_tx.send(Msg::Line(line)).is_err() {
                 return;
             }
         }
+        stdin_logger.log("--", "stdin EOF");
         let _ = stdin_tx.send(Msg::Eof);
     });
 
@@ -267,18 +318,25 @@ pub fn run() {
                 if line.split_whitespace().next() == Some("go") {
                     search_start = Some(Instant::now());
                 }
-                match handle_line(&mut engine, &line, &tx) {
+                let cmd = line.split_whitespace().next().unwrap_or("").to_string();
+                logger.log("--", &format!("dispatch {cmd}"));
+                let outcome = handle_line(&mut engine, &line, &tx);
+                logger.log("--", &format!("dispatched {cmd}"));
+                match outcome {
                     CommandOutcome::Continue(lines) => {
                         if !lines.is_empty() {
                             let mut out = stdout.lock();
                             for l in lines {
+                                logger.log("<<", &l);
                                 let _ = writeln!(out, "{l}");
                             }
                             let _ = out.flush();
                         }
                     }
                     CommandOutcome::Quit => {
+                        logger.log("--", "quit: stopping search");
                         engine.stop();
+                        logger.log("--", "quit: search stopped");
                         break;
                     }
                 }
@@ -286,11 +344,15 @@ pub fn run() {
             Msg::Engine(event) => {
                 let mut out = stdout.lock();
                 let elapsed = search_start.map(|s| s.elapsed());
-                let _ = writeln!(out, "{}", format_event(&event, elapsed));
+                let formatted = format_event(&event, elapsed);
+                logger.log("<<", &formatted);
+                let _ = writeln!(out, "{formatted}");
                 let _ = out.flush();
             }
             Msg::Eof => {
+                logger.log("--", "eof: stopping search");
                 engine.stop();
+                logger.log("--", "eof: search stopped");
                 break;
             }
         }

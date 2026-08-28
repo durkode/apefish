@@ -1,10 +1,9 @@
 #!/bin/bash
-set -e
 
 BASE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-# Build first; send cargo's output to stderr so it can't corrupt the UCI
-# stdout stream the GUI reads.
-cargo build --release --manifest-path "${BASE_DIR}/Cargo.toml" --bin apefish --quiet >&2
+# UCI trace log for debugging GUI stalls. One file per engine launch. Remove
+# this line (or unset APEFISH_UCI_LOG) to disable.
+export APEFISH_UCI_LOG="${BASE_DIR}/apefish_uci_$(date +%Y%m%d_%H%M%S_%N).log"
 
 exec "${BASE_DIR}/target/release/apefish" --uci
