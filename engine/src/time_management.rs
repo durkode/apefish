@@ -11,10 +11,9 @@ impl TimeCutoffs {
     // TODO: inject Instant compatible object for testing purposes.
     pub fn from_search_limit(limits: &SearchLimits, active_side: Side) -> Option<Self> {
         let now = Instant::now();
-        const OVERHEAD: Duration = Duration::from_millis(5);
+        const OVERHEAD: Duration = Duration::from_millis(50);
 
-        // `movetime` fixes the budget for this move and overrides clock-based control.
-        // No soft/hard split: search until the deadline, minus a small overhead margin.
+        // if movetime is set, it overrides all other time control settings
         if let Some(movetime) = limits.movetime {
             let budget = movetime.saturating_sub(OVERHEAD).max(Duration::from_millis(1));
             return Some(TimeCutoffs { soft_limit: now + budget, hard_limit: now + budget });
@@ -36,7 +35,7 @@ impl TimeCutoffs {
         };
 
         // Some sensible defaults for time. 
-        // TODO: Tune this in the future
+        // TODO: Tune this in the future. Potentially adjust limits on the fly based on how contentious next move is.
         // TODO: UCI also seems to support a "movestogo" with formats that use a move based time control.
         //       Add support for this later.
         let soft_limit = time_remaining / 20 + increment.unwrap_or(Duration::from_millis(0)) * 3/4;

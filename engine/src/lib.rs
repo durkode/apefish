@@ -34,7 +34,21 @@ pub enum EngineEvent {
     /// per search, in increasing `depth` order.
     Info { depth: u8, result: SearchResult },
 
-    /// End of search result. 
+    /// Periodic progress counters emitted mid-search, independent of iteration
+    /// completion. Carries no `score`/`pv` — those are only stable at an
+    /// iteration boundary (see [`EngineEvent::Info`]).
+    Stats {
+        /// Nominal depth of the iteration currently running.
+        depth: u8,
+        /// Total nodes searched so far this `go`.
+        nodes: u64,
+        /// Transposition table fill, in per-mille (0–1000).
+        hashfull: u16,
+        /// Tablebase probe hits so far this `go`.
+        tbhits: u64,
+    },
+
+    /// End of search result.
     BestMove(SearchResult),
 }
 

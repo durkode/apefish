@@ -57,7 +57,7 @@ fn search(engine: &mut Apefish, limits: SearchLimits) -> SearchResult {
     loop {
         match rx.recv().expect("search ended without emitting a BestMove event") {
             EngineEvent::BestMove(result) => return result,
-            EngineEvent::Info { .. } => {}
+            EngineEvent::Info { .. } | EngineEvent::Stats { .. } => {}
         }
     }
 }

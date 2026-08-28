@@ -7,7 +7,7 @@ use std::{fmt, str::FromStr};
 
 pub type Score = i32;
 pub const MAX_MOVES: usize = 1024;
-pub const MAX_PLY: usize = MAX_MOVES * 2 + 1;
+pub const MAX_PLY: usize = 256;
 // We compress Score into an i16 in the transposition table
 // So make sure Mate + ply stays in bounds of an i16
 // TODO: potentially wrap Score as a newtype.
@@ -249,7 +249,7 @@ impl Rank {
 //   - 12..14 promotion piece
 // Future optimisation idea: Use the spare bit as a "special move" flag
 // to alert to either EP or castling rather than inferring on make_move()
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct Move(u16);
 
 impl Move {

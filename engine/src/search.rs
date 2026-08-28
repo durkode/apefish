@@ -2,14 +2,91 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration};
+use std::time::{Duration, Instant};
 
+use crate::zobrist::ZobristKey;
 use crate::{EngineEvent, EventSink};
-use crate::basetypes::{MATE, Move, Score};
+use crate::basetypes::{MATE, MAX_PLY, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
 use crate::time_management::TimeCutoffs;
 use crate::transposition_table::{ScoreBound, TT};
+
+
+const STATS_EVENT_INTERVAL: Duration = Duration::from_millis(200);
+const TT_WALK_MAX_LENGTH: usize = 16; // Make length to go through TT to find the PV line
+
+struct PVTriangle {
+    pv: [[Move; MAX_PLY]; MAX_PLY], // The PV for a given ply
+    pv_length: [usize; MAX_PLY] // The length of a PV for a given ply
+}
+
+impl PVTriangle {
+
+    pub fn new() -> Self {
+        PVTriangle { 
+            pv: [[Move::default(); MAX_PLY]; MAX_PLY], 
+            pv_length: [0; MAX_PLY],
+        }
+    }
+
+    pub fn start_negamax(&mut self, ply: usize) {
+        self.pv_length[ply] = 0;
+    }
+
+    pub fn new_best_move(&mut self, mv: Move, ply: usize) {
+        self.pv[ply][0] = mv;
+        for i in 0..self.pv_length[ply + 1] {
+            self.pv[ply][i + 1] = self.pv[ply + 1][i];
+        }
+        self.pv_length[ply] = self.pv_length[ply + 1] + 1;
+    }
+
+    pub fn get_pv(&self, pos: &Position, tt: &dyn TT) -> Vec<Move> {
+        // TODO: I thought this would consume self.pv, but given it is not mut it can't
+        //       Investigate this.
+        // TODO: probably should move this to the searcher, rather than doing this on the pvtriangle struct
+        let mut pv = Vec::from(&self.pv[0][..self.pv_length[0]]);
+        // Note probably more efficient to not clone the pos, but given this isn't on the hot path (only on each iterative deepening)
+        // it shouldn't really matter
+        let mut curr_pos = pos.clone();
+        
+        // First, walk the pv line as far as possible
+        // Note that the pv line might be corrupted due to a search aborted halfway through,
+        // So treat each move as a possible failure. Verify against the board
+        let mut valid_length = 0;
+        for &mv in &pv {
+            if curr_pos.make_move(mv).is_err() {
+                break
+            }
+            valid_length += 1;
+        }        
+        pv.truncate(valid_length);
+
+        // Now we have a valid pv line from the triangle, walk the TT
+        // Note: we must check for loop detection (pos can return back to old pos)
+        // And we want to cap the length at a reasonable walk (TT_WALK_MAX_LENGTH)
+        let mut visited_zobrists = [ZobristKey::default(); TT_WALK_MAX_LENGTH];
+        let mut walk_counter = 0;
+        let mut curr_zobrist = curr_pos.get_zobrist();
+
+        while let Some(tt_hit) = tt.fetch(curr_zobrist, pv.len()) {
+            if curr_pos.make_move(tt_hit.mv).is_err() {
+                break
+            }
+            pv.push(tt_hit.mv);
+            visited_zobrists[walk_counter] = curr_zobrist;
+            walk_counter += 1;
+            curr_zobrist = curr_pos.get_zobrist();
+            if walk_counter >= TT_WALK_MAX_LENGTH || visited_zobrists.contains(&curr_zobrist) {
+                break
+            }
+        };
+
+        pv
+    }
+}
+
 
 /// Constraints on a single search call. All fields optional; interpretation
 /// (e.g. how clock time maps to a time budget) is up to the search implementation.
@@ -43,8 +120,11 @@ pub struct Searcher {
     movegen: Arc<MoveGen>,
     tt: Arc<dyn TT>,
     stop: Arc<AtomicBool>,
+    last_stats_event_emitted: Option<Instant>,
 }
 
+// TODO: restructure so there is 1 searcher per search running that is recreated from scratch, rather than reusing the same one.
+// It is just conceptually cleaner.
 impl Searcher {
 
     pub fn new(movegen: Arc<MoveGen>, transposition_table: Arc<dyn TT>, stop: Arc<AtomicBool>) -> Self {
@@ -52,6 +132,7 @@ impl Searcher {
             movegen: movegen,
             tt: transposition_table,
             stop: stop,
+            last_stats_event_emitted: None,
         }
     }
 
@@ -76,17 +157,29 @@ impl Searcher {
 
         self.tt.new_search(); // Set the correct search iteration now we are starting a new search
 
+        let mut pv_triangle: Box<PVTriangle> = Box::new(PVTriangle::new());
+
         let mut score: Score = 0;
         let mut best_move = None;
         let mut nodes_searched = 0; // Running total mutated from within negamax search
         
         for depth in 0..max_depth {
-            if let Some(ref cutoffs) = time_cutoffs {
-                if cutoffs.exceeded_soft() {
+            if let Some(ref time_cutoff) = time_cutoffs {
+                if time_cutoff.exceeded_soft() {
                     break;
                 }
             }
-            if let Some(negamax_result) = self.negamax(pos, depth, ply, alpha, beta, time_cutoffs.as_ref(), &mut nodes_searched) {
+            if let Some(negamax_result) = self.negamax(
+                pos, 
+                depth, 
+                ply, 
+                alpha, 
+                beta, 
+                time_cutoffs.as_ref(), 
+                &mut nodes_searched, 
+                &mut pv_triangle,
+                send_event,
+            ) {
                 score = negamax_result.score;
                 best_move = negamax_result.best_move;
 
@@ -96,7 +189,7 @@ impl Searcher {
                     result: SearchResult { 
                         best_move, 
                         score, 
-                        pv: vec![], 
+                        pv: pv_triangle.get_pv(pos, self.tt.as_ref()), 
                         nodes: nodes_searched
                     } 
                 });
@@ -114,7 +207,7 @@ impl Searcher {
         SearchResult { 
             best_move, 
             score, 
-            pv: vec![], 
+            pv: pv_triangle.get_pv(pos, self.tt.as_ref()), 
             nodes: nodes_searched
         }
     }
@@ -127,7 +220,21 @@ impl Searcher {
     //   - best_move
     //   - nodes_searched
     //   - Search complete (not aborted)
-    fn negamax(&mut self, pos: &mut Position, depth: u8, ply: usize, mut alpha: Score, beta: Score, cutoffs: Option<&TimeCutoffs>, nodes_searched: &mut u64) -> Option<NegamaxResult> {
+    fn negamax(
+        &mut self, pos: 
+        &mut Position, 
+        depth: u8, 
+        ply: usize, 
+        mut alpha: Score, 
+        beta: Score, 
+        cutoffs: Option<&TimeCutoffs>, 
+        nodes_searched: &mut u64, 
+        pv: &mut Box<PVTriangle>,
+        send_event: &EventSink
+    ) -> Option<NegamaxResult> {
+
+        pv.start_negamax(ply);
+
         *nodes_searched += 1;
 
         // Check if search is aborted or timed out
@@ -141,9 +248,24 @@ impl Searcher {
             if self.stop.load(Ordering::Relaxed) {
                 return None
             }
+
+            // Emit an info event if time has elapsed
+            let now = Instant::now();
+            if self.last_stats_event_emitted.is_none() || self.last_stats_event_emitted.unwrap() + STATS_EVENT_INTERVAL < now {
+                // TODO: populate the hashfull and tbhits fields for better data once we track these.
+                send_event(
+                    EngineEvent::Stats { 
+                        depth: depth + ply as u8, // TODO: this will break with future search extensions, store root depth on the search object
+                        nodes: *nodes_searched, 
+                        hashfull: 0, 
+                        tbhits: 0 
+                    }
+                );
+                self.last_stats_event_emitted = Some(now);
+            }
         }
 
-        if depth == 0 {
+        if depth == 0 || ply >= MAX_PLY {
             return Some(NegamaxResult {best_move: None, score: pos.evaluate()})
         }
 
@@ -180,7 +302,7 @@ impl Searcher {
             if pos.make_move(cm).is_err() {
                 continue
             }
-            let subsearch = self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs, nodes_searched);
+            let subsearch = self.negamax(pos, depth - 1, ply + 1, -beta, -alpha, cutoffs, nodes_searched, pv, send_event);
             pos.unmake_move();
 
             if subsearch.is_none() {
@@ -197,6 +319,8 @@ impl Searcher {
             }
             if best_score > alpha {
                 alpha = best_score;
+                // I assume best_move must be set here, I guess we will find out
+                pv.new_best_move(best_move.unwrap(), ply);
             }
             if alpha >= beta {
                 break;

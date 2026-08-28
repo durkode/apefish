@@ -10,7 +10,7 @@
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use apefish_engine::search::SearchLimits;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square, UnvalidatedMove};
@@ -124,13 +124,32 @@ fn handle_position(engine: &mut Apefish, args: &str) {
 }
 
 /// Render an [`EngineEvent`] as the UCI line it produces on stdout.
-pub fn format_event(event: &EngineEvent) -> String {
+///
+/// `elapsed` is wall-clock time since the `go` that started this search, measured
+/// on the UCI side because the engine reports no timing. It drives `time` and
+/// `nps`; pass `None` when no search start was recorded.
+///
+/// `nps` and the ponder move are derived entirely here from data the engine
+/// already sends (`nodes`, `pv`). `tbhits` is a fixed `0` — the engine has no
+/// tablebase probing. `hashfull` is not emitted at all; see the note in `run`.
+pub fn format_event(event: &EngineEvent, elapsed: Option<Duration>) -> String {
     match event {
         EngineEvent::Info { depth, result } => {
             let mut line = format!(
                 "info depth {depth} score cp {} nodes {}",
                 result.score, result.nodes
             );
+            if let Some(elapsed) = elapsed {
+                let ms = elapsed.as_millis();
+                line.push_str(&format!(" time {ms}"));
+                if ms > 0 {
+                    let nps = u128::from(result.nodes) * 1000 / ms;
+                    line.push_str(&format!(" nps {nps}"));
+                }
+            }
+            // Fixed 0: the engine does no tablebase probing. Becomes real once it
+            // reports a tbhits count.
+            line.push_str(" tbhits 0");
             if !result.pv.is_empty() {
                 line.push_str(" pv");
                 for mv in &result.pv {
@@ -140,12 +159,33 @@ pub fn format_event(event: &EngineEvent) -> String {
             }
             line
         }
+        EngineEvent::Stats { depth, nodes, hashfull, tbhits } => {
+            let mut line = format!("info depth {depth} nodes {nodes}");
+            if let Some(elapsed) = elapsed {
+                let ms = elapsed.as_millis();
+                line.push_str(&format!(" time {ms}"));
+                if ms > 0 {
+                    let nps = u128::from(*nodes) * 1000 / ms;
+                    line.push_str(&format!(" nps {nps}"));
+                }
+            }
+            line.push_str(&format!(" hashfull {hashfull} tbhits {tbhits}"));
+            line
+        }
         EngineEvent::BestMove(result) => {
             let mv = match result.best_move {
                 Some(mv) => mv.to_string(),
                 None => "0000".to_string(),
             };
-            format!("bestmove {mv}")
+            let mut line = format!("bestmove {mv}");
+            // Ponder move = the reply the engine expects next, i.e. the second
+            // entry of the principal variation.
+            if result.best_move.is_some() {
+                if let Some(ponder) = result.pv.get(1) {
+                    line.push_str(&format!(" ponder {ponder}"));
+                }
+            }
+            line
         }
     }
 }
@@ -217,26 +257,36 @@ pub fn run() {
     });
 
     let stdout = io::stdout();
+    // Stamped when a `go` is seen so `format_event` can report `time`/`nps`.
+    // `hashfull` would be added here too, but the engine owns the transposition
+    // table and exposes no fill level, so the UCI side cannot compute it.
+    let mut search_start: Option<Instant> = None;
     for msg in rx {
         match msg {
-            Msg::Line(line) => match handle_line(&mut engine, &line, &tx) {
-                CommandOutcome::Continue(lines) => {
-                    if !lines.is_empty() {
-                        let mut out = stdout.lock();
-                        for l in lines {
-                            let _ = writeln!(out, "{l}");
+            Msg::Line(line) => {
+                if line.split_whitespace().next() == Some("go") {
+                    search_start = Some(Instant::now());
+                }
+                match handle_line(&mut engine, &line, &tx) {
+                    CommandOutcome::Continue(lines) => {
+                        if !lines.is_empty() {
+                            let mut out = stdout.lock();
+                            for l in lines {
+                                let _ = writeln!(out, "{l}");
+                            }
+                            let _ = out.flush();
                         }
-                        let _ = out.flush();
+                    }
+                    CommandOutcome::Quit => {
+                        engine.stop();
+                        break;
                     }
                 }
-                CommandOutcome::Quit => {
-                    engine.stop();
-                    break;
-                }
-            },
+            }
             Msg::Engine(event) => {
                 let mut out = stdout.lock();
-                let _ = writeln!(out, "{}", format_event(&event));
+                let elapsed = search_start.map(|s| s.elapsed());
+                let _ = writeln!(out, "{}", format_event(&event, elapsed));
                 let _ = out.flush();
             }
             Msg::Eof => {

@@ -19,7 +19,7 @@ fn recv_bestmove(rx: &Receiver<Msg>) -> SearchResult {
     loop {
         match rx.recv().expect("engine event before channel closed") {
             Msg::Engine(EngineEvent::BestMove(result)) => return result,
-            Msg::Engine(EngineEvent::Info { .. }) => continue,
+            Msg::Engine(EngineEvent::Info { .. }) | Msg::Engine(EngineEvent::Stats { .. }) => continue,
             other => panic!("unexpected message: {other:?}"),
         }
     }
