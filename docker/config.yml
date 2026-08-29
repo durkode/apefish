@@ -12,7 +12,7 @@ engine:
   dir: "./engines/"
   name: "apefish"            # the wrapper script; it execs apefish.bin --uci
   protocol: "uci"
-  ponder: false             # apefish pondering is still new; enable once validated
+  ponder: true             # apefish pondering is still new; enable once validated
   uci_options:
     Hash: 2048               # MiB. The only spin option apefish implements.
   silence_stderr: true
@@ -28,17 +28,19 @@ challenge:                  # which incoming challenges to accept
   variants:
     - standard
   time_controls:
+    - ultrabullet
     - bullet
     - blitz
     - rapid
   modes:
     - casual
     - rated
-  allow_list:
-    - RoryBrennan
-    - RupesLC
-    - durkadurk   # only this account may challenge the bot.
-                              # Delete this allow_list block to accept from anyone.
+  # allow_list:
+  #   - hometown_daredevil
+  #   - RoryBrennan
+  #   - RupesLC
+  #   - durkadurk   # only this account may challenge the bot.
+  #                             # Delete this allow_list block to accept from anyone.
 
 matchmaking:
   allow_matchmaking: false  # the bot does not seek out its own games

@@ -42,7 +42,7 @@ impl TimeCutoffs {
                 Some((time_remaining, increment)) => {
                     let soft = time_remaining / 20
                         + increment.unwrap_or(Duration::from_millis(0)) * 3 / 4;
-                    let hard = min(time_remaining / 2, soft * 4);
+                    let hard = min(time_remaining / 2, soft * 2);
                     (Some(now.add(soft)), Some(now.add(hard)))
                 }
                 None => (None, None),
