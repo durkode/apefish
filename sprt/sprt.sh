@@ -14,12 +14,16 @@
 #   --elo0 N --elo1 N  override the mode's bounds (logistic Elo)
 #   --tc TC            vstc (4+0.04), stc (8+0.08, default), ltc (40+0.4),
 #                      or any fastchess tc string such as 10+0.1
-#   --concurrency N    games in parallel (default: cores - 2)
+#   --concurrency N    games in parallel (default: cores - 2, or one per --cpus)
+#   --cpus LIST        pin games to these CPUs, e.g. 2-11 (fastchess -use-affinity)
 #   --max-games N      stop undecided after N games (default 20000)
 #   --force            run even when dev and base have the same bench signature
+#   --bench-only       build both, compare bench signatures, play no games
 #   --no-history       don't append the result to sprt/history.tsv
 #
-# Each run writes its PGN and full fastchess log to sprt/runs/<timestamp>_*/.
+# Each run writes its PGN, full fastchess log, summary.txt and result.json to
+# sprt/runs/<timestamp>_*/ (or $SPRT_RUNS_DIR). Under GitHub Actions the result
+# also goes to $GITHUB_OUTPUT and the job summary; see sprt/ci/.
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -30,9 +34,11 @@ MODE="gainer"
 ELO0=""
 ELO1=""
 TC_NAME="stc"
-CONCURRENCY="$(default_concurrency)"
+CONCURRENCY=""
+CPUS=""
 MAX_GAMES=20000
 FORCE=0
+BENCH_ONLY=0
 HISTORY=1
 
 while [ $# -gt 0 ]; do
@@ -44,8 +50,10 @@ while [ $# -gt 0 ]; do
     --elo1) ELO1="$2"; shift 2 ;;
     --tc) TC_NAME="$2"; shift 2 ;;
     --concurrency) CONCURRENCY="$2"; shift 2 ;;
+    --cpus) CPUS="$2"; shift 2 ;;
     --max-games) MAX_GAMES="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --bench-only) BENCH_ONLY=1; shift ;;
     --no-history) HISTORY=0; shift ;;
     -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
@@ -69,21 +77,46 @@ case "${TC_NAME}" in
   *) TC="${TC_NAME}"; HASH=16 ;;
 esac
 
-warn_if_bot_running
-FASTCHESS_BIN="$(ensure_fastchess)"
-BOOK="$(ensure_book)"
+AFFINITY=()
+if [ -n "${CPUS}" ]; then
+  AFFINITY=(-use-affinity "${CPUS}")
+  : "${CONCURRENCY:=$(count_cpus "${CPUS}")}"
+fi
+: "${CONCURRENCY:=$(default_concurrency)}"
 
-read -r DEV_BIN DEV_LABEL < <(build_engine "${DEV_REF}")
-read -r BASE_BIN BASE_LABEL < <(build_engine "${BASE_REF}")
+# Process substitution hides build failures from `set -e`, so check the result.
+read -r DEV_BIN DEV_LABEL < <(build_engine "${DEV_REF}") || true
+[ -n "${DEV_BIN:-}" ] || die "could not build dev (${DEV_REF})"
+read -r BASE_BIN BASE_LABEL < <(build_engine "${BASE_REF}") || true
+[ -n "${BASE_BIN:-}" ] || die "could not build base (${BASE_REF})"
 
 DEV_BENCH="$(bench_nodes "${DEV_BIN}")"
 BASE_BENCH="$(bench_nodes "${BASE_BIN}")"
 log "bench: dev ${DEV_LABEL} = ${DEV_BENCH}, base ${BASE_LABEL} = ${BASE_BENCH}"
-if [ "${DEV_BENCH}" != "n/a" ] && [ "${DEV_BENCH}" = "${BASE_BENCH}" ] && [ "${FORCE}" -eq 0 ]; then
-  log "identical bench signatures: the change cannot affect play, so there is nothing to test."
-  log "(pass --force to run anyway)"
+BENCH_CHANGED=true
+if [ "${DEV_BENCH}" != "n/a" ] && [ "${DEV_BENCH}" = "${BASE_BENCH}" ]; then
+  BENCH_CHANGED=false
+fi
+gh_output "dev_sha=${DEV_LABEL}" "base_sha=${BASE_LABEL}" \
+  "dev_bench=${DEV_BENCH}" "base_bench=${BASE_BENCH}" "bench_changed=${BENCH_CHANGED}"
+
+if [ "${BENCH_ONLY}" -eq 1 ]; then
+  echo "dev ${DEV_LABEL} ${DEV_BENCH}"
+  echo "base ${BASE_LABEL} ${BASE_BENCH}"
+  echo "bench_changed ${BENCH_CHANGED}"
   exit 0
 fi
+
+if [ "${BENCH_CHANGED}" = false ] && [ "${FORCE}" -eq 0 ]; then
+  log "identical bench signatures: the change cannot affect play, so there is nothing to test."
+  log "(pass --force to run anyway)"
+  gh_output "result=skipped"
+  exit 0
+fi
+
+warn_if_bot_running
+FASTCHESS_BIN="$(ensure_fastchess)"
+BOOK="$(ensure_book)"
 
 # Binaries are copied into the run dir so a rebuild of bins/worktree
 # mid-run can't swap an engine out from under fastchess.
@@ -92,7 +125,7 @@ mkdir -p "${RUN_DIR}"
 cp "${DEV_BIN}" "${RUN_DIR}/dev"
 cp "${BASE_BIN}" "${RUN_DIR}/base"
 
-log "SPRT ${MODE} [${ELO0}, ${ELO1}] tc=${TC} hash=${HASH}MB concurrency=${CONCURRENCY}"
+log "SPRT ${MODE} [${ELO0}, ${ELO1}] tc=${TC} hash=${HASH}MB concurrency=${CONCURRENCY}${CPUS:+ cpus=${CPUS}}"
 log "dev  = ${DEV_LABEL} (${DEV_REF})"
 log "base = ${BASE_LABEL} (${BASE_REF})"
 log "output: ${RUN_DIR}"
@@ -107,7 +140,7 @@ set +e
   -each proto=uci tc="${TC}" option.Hash="${HASH}" \
   -openings file="${BOOK}" format=pgn order=random \
   -repeat -rounds $(( (MAX_GAMES + 1) / 2 )) \
-  -concurrency "${CONCURRENCY}" \
+  -concurrency "${CONCURRENCY}" ${AFFINITY[@]+"${AFFINITY[@]}"} \
   -sprt elo0="${ELO0}" elo1="${ELO1}" alpha=0.05 beta=0.05 model=logistic \
   -draw movenumber=40 movecount=8 score=10 \
   -resign movecount=3 score=1000 twosided=true \
@@ -141,7 +174,12 @@ WINS="$(num_after Wins "${GAMES_LINE}")"
 LOSSES="$(num_after Losses "${GAMES_LINE}")"
 DRAWS="$(num_after Draws "${GAMES_LINE}")"
 # "Elo: -17.39 +/- 76.79, nElo: ..."
-ELO="$(sed -nE 's/^Elo: (-?[0-9.]+) \+\/- ([0-9.]+).*/\1 ± \2/p' <<<"${ELO_LINE}")"
+# Either value can be inf/nan when one side scores (nearly) 100%.
+ELO_VAL="$(sed -nE 's/^Elo: ([^ ]+) .*/\1/p' <<<"${ELO_LINE}")"
+ELO_ERR="$(sed -nE 's/^Elo: [^ ]+ \+\/- ([^ ,]+).*/\1/p' <<<"${ELO_LINE}")"
+ELO=""
+[ -n "${ELO_VAL}" ] && ELO="${ELO_VAL} ± ${ELO_ERR}"
+json_num() { [[ "$1" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && echo "$1" || echo null; }
 LLR="$(sed -nE 's/^LLR: (-?[0-9.]+).*/\1/p' <<<"${LLR_LINE}")"
 
 ABNORMAL="$(abnormal_terminations "${RUN_DIR}/games.pgn")"
@@ -160,16 +198,65 @@ ABNORMAL="$(abnormal_terminations "${RUN_DIR}/games.pgn")"
   fi
 } | tee "${RUN_DIR}/summary.txt"
 
-if [ "${HISTORY}" -eq 1 ]; then
-  HISTORY_FILE="${SPRT_DIR}/history.tsv"
-  if [ ! -f "${HISTORY_FILE}" ]; then
-    printf 'date\tdev\tbase\tmode\telo0\telo1\ttc\tgames\twins\tdraws\tlosses\telo\tllr\tresult\tdev_bench\tbase_bench\n' \
-      > "${HISTORY_FILE}"
-  fi
+ABNORMAL_FLAG=false
+[ -n "${ABNORMAL}" ] && ABNORMAL_FLAG=true
+
+cat > "${RUN_DIR}/result.json" <<EOF
+{
+  "result": "${RESULT}",
+  "dev": "${DEV_LABEL}",
+  "base": "${BASE_LABEL}",
+  "dev_bench": "${DEV_BENCH}",
+  "base_bench": "${BASE_BENCH}",
+  "mode": "${MODE}",
+  "elo0": ${ELO0},
+  "elo1": ${ELO1},
+  "tc": "${TC}",
+  "games": ${GAMES:-0},
+  "wins": ${WINS:-0},
+  "draws": ${DRAWS:-0},
+  "losses": ${LOSSES:-0},
+  "elo": $(json_num "${ELO_VAL}"),
+  "elo_error": $(json_num "${ELO_ERR}"),
+  "llr": $(json_num "${LLR}"),
+  "abnormal_endings": ${ABNORMAL_FLAG}
+}
+EOF
+
+# This run's history.tsv row, with header, kept with the run so CI can publish it.
+{
+  printf 'date\tdev\tbase\tmode\telo0\telo1\ttc\tgames\twins\tdraws\tlosses\telo\tllr\tresult\tdev_bench\tbase_bench\n'
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(date -Iseconds)" "${DEV_LABEL}" "${BASE_LABEL}" "${MODE}" "${ELO0}" "${ELO1}" "${TC}" \
     "${GAMES:-0}" "${WINS:-0}" "${DRAWS:-0}" "${LOSSES:-0}" "${ELO:-n/a}" "${LLR:-n/a}" \
-    "${RESULT}" "${DEV_BENCH}" "${BASE_BENCH}" >> "${HISTORY_FILE}"
+    "${RESULT}" "${DEV_BENCH}" "${BASE_BENCH}"
+} > "${RUN_DIR}/history-row.tsv"
+
+if [ "${HISTORY}" -eq 1 ]; then
+  HISTORY_FILE="${SPRT_DIR}/history.tsv"
+  [ -f "${HISTORY_FILE}" ] || head -n 1 "${RUN_DIR}/history-row.tsv" > "${HISTORY_FILE}"
+  tail -n 1 "${RUN_DIR}/history-row.tsv" >> "${HISTORY_FILE}"
+fi
+
+gh_output "result=${RESULT}" "run_dir=${RUN_DIR}" "games=${GAMES:-0}" \
+  "wins=${WINS:-0}" "draws=${DRAWS:-0}" "losses=${LOSSES:-0}" \
+  "elo=${ELO:-n/a}" "llr=${LLR:-n/a}" "abnormal=${ABNORMAL_FLAG}"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    echo "### SPRT ${TC_NAME} (${TC}): ${RESULT}"
+    echo
+    echo "| | |"
+    echo "|---|---|"
+    echo "| Test | ${MODE} [${ELO0}, ${ELO1}] |"
+    echo "| Elo | ${ELO:-n/a} |"
+    echo "| LLR | ${LLR:-n/a} (bounds ±2.94) |"
+    echo "| Games | ${GAMES:-0} (W ${WINS:-0} / D ${DRAWS:-0} / L ${LOSSES:-0}) |"
+    echo "| Dev | \`${DEV_LABEL}\` bench ${DEV_BENCH} |"
+    echo "| Base | \`${BASE_LABEL}\` bench ${BASE_BENCH} |"
+    if [ "${ABNORMAL_FLAG}" = true ]; then
+      echo "| Abnormal endings | $(tr '\n' ' ' <<<"${ABNORMAL}") |"
+    fi
+  } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
 case "${RESULT}" in

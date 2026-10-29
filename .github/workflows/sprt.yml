@@ -1,0 +1,141 @@
+# SPRT strength tests on the self-hosted runner (label: apefish-sprt).
+#
+# Triggered by adding the `sprt` label to a PR (and re-run on each push while
+# the label stays on), or manually from the Actions tab. STC runs first; LTC
+# runs automatically only if STC passes. Results are advisory: commit statuses
+# sprt/stc and sprt/ltc, a PR comment per time control, and a row in
+# history.tsv on the sprt-results branch.
+#
+# SECURITY: this repo is public. Never let PR code from forks reach the
+# self-hosted runner: the job condition below requires the PR branch to live
+# in this repository, and fork PR workflows also need maintainer approval
+# (Settings -> Actions -> General).
+name: SPRT
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      dev:
+        description: Branch or commit to test
+        required: true
+      base:
+        description: Branch or commit to test against
+        default: main
+      mode:
+        description: gainer [0, 20] or nonreg [-20, 0]
+        type: choice
+        options: [gainer, nonreg]
+        default: gainer
+
+# A new push to a PR cancels its running test; separate PRs queue on the runner.
+concurrency:
+  group: sprt-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stc:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(github.event.pull_request.labels.*.name, 'sprt') &&
+       (github.event.action == 'synchronize' || github.event.label.name == 'sprt'))
+    runs-on: [self-hosted, apefish-sprt]
+    timeout-minutes: 360
+    permissions:
+      contents: write       # history.tsv on the sprt-results branch
+      pull-requests: write  # result comment
+      statuses: write       # sprt/stc status
+    outputs:
+      result: ${{ steps.sprt.outputs.result }}
+      dev: ${{ steps.refs.outputs.dev }}
+      base: ${{ steps.refs.outputs.base }}
+      mode: ${{ steps.refs.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.dev }}
+          fetch-depth: 0
+      # PRs test exactly their own changes: head against the merge base.
+      - id: refs
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          NONREG: ${{ contains(github.event.pull_request.labels.*.name, 'nonreg') }}
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_MODE: ${{ inputs.mode }}
+        run: |
+          if [ -n "${PR_HEAD}" ]; then
+            DEV="${PR_HEAD}"
+            BASE="$(git merge-base "origin/${PR_BASE_REF}" "${DEV}")"
+            MODE=gainer; [ "${NONREG}" = true ] && MODE=nonreg
+          else
+            DEV="$(git rev-parse HEAD)"
+            BASE="$(git rev-parse --verify "origin/${INPUT_BASE}^{commit}" 2>/dev/null \
+                    || git rev-parse --verify "${INPUT_BASE}^{commit}")"
+            MODE="${INPUT_MODE}"
+          fi
+          {
+            echo "dev=${DEV}"
+            echo "base=${BASE}"
+            echo "mode=${MODE}"
+          } >> "${GITHUB_OUTPUT}"
+      - id: sprt
+        env:
+          DEV: ${{ steps.refs.outputs.dev }}
+          BASE: ${{ steps.refs.outputs.base }}
+          MODE: ${{ steps.refs.outputs.mode }}
+          PR: ${{ github.event.pull_request.number }}
+          SPRT_CPUS: ${{ vars.SPRT_CPUS || '2-11' }}
+          SPRT_RUNS_DIR: ${{ runner.temp }}/sprt-runs
+          GH_TOKEN: ${{ github.token }}
+        run: sprt/ci/sprt-job.sh stc
+      - if: always() && steps.sprt.outputs.run_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprt-stc
+          path: |
+            ${{ steps.sprt.outputs.run_dir }}/games.pgn
+            ${{ steps.sprt.outputs.run_dir }}/fastchess.log
+            ${{ steps.sprt.outputs.run_dir }}/summary.txt
+            ${{ steps.sprt.outputs.run_dir }}/result.json
+          retention-days: 30
+
+  ltc:
+    needs: stc
+    if: needs.stc.outputs.result == 'H1'
+    runs-on: [self-hosted, apefish-sprt]
+    timeout-minutes: 1200
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.stc.outputs.dev }}
+          fetch-depth: 0
+      - id: sprt
+        env:
+          DEV: ${{ needs.stc.outputs.dev }}
+          BASE: ${{ needs.stc.outputs.base }}
+          MODE: ${{ needs.stc.outputs.mode }}
+          PR: ${{ github.event.pull_request.number }}
+          SPRT_CPUS: ${{ vars.SPRT_CPUS || '2-11' }}
+          SPRT_RUNS_DIR: ${{ runner.temp }}/sprt-runs
+          GH_TOKEN: ${{ github.token }}
+        run: sprt/ci/sprt-job.sh ltc
+      - if: always() && steps.sprt.outputs.run_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprt-ltc
+          path: |
+            ${{ steps.sprt.outputs.run_dir }}/games.pgn
+            ${{ steps.sprt.outputs.run_dir }}/fastchess.log
+            ${{ steps.sprt.outputs.run_dir }}/summary.txt
+            ${{ steps.sprt.outputs.run_dir }}/result.json
+          retention-days: 30

@@ -3,7 +3,7 @@
 //! The total node count is a fingerprint of the engine's search behaviour: two
 //! builds with the same count search identically, so a change that leaves it
 //! untouched (refactor, UCI plumbing, a pure speedup) cannot change playing
-//! strength and needs no SPRT test. Record it in commit messages as `Bench: N`.
+//! strength and needs no SPRT test. CI reports it on every PR (see sprt/README.md).
 //!
 //! Every position starts from a freshly allocated transposition table, so the
 //! count depends only on the build and the depth, never on run order or timing.

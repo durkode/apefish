@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for sprt/sprt.sh and sprt/smoke.sh. Source, don't execute.
 #
 # Everything is non-interactive and configured through flags/env vars so the
@@ -5,10 +6,17 @@
 
 SPRT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SPRT_DIR}/.." && pwd)"
-TOOLS_DIR="${SPRT_DIR}/.tools"
-BINS_DIR="${SPRT_DIR}/bins"
-BOOKS_DIR="${SPRT_DIR}/books"
-RUNS_DIR="${SPRT_DIR}/runs"
+
+# SPRT_CACHE_DIR moves the tool/book/binary caches (and the shared cargo target
+# dir) out of the checkout, e.g. to a persistent directory on a CI runner.
+# SPRT_RUNS_DIR does the same for per-run output.
+CACHE_DIR="${SPRT_CACHE_DIR:-${SPRT_DIR}}"
+TOOLS_DIR="${CACHE_DIR}/.tools"
+BINS_DIR="${CACHE_DIR}/bins"
+BOOKS_DIR="${CACHE_DIR}/books"
+TARGET_DIR="${CACHE_DIR}/.target"
+# shellcheck disable=SC2034 # used by the scripts that source this file
+RUNS_DIR="${SPRT_RUNS_DIR:-${SPRT_DIR}/runs}"
 
 # fastchess release to build from source when it isn't on PATH and nix isn't
 # available. Matches the version nixpkgs currently ships.
@@ -113,11 +121,11 @@ build_engine() {
     git -C "${REPO_ROOT}" worktree add --quiet --detach "${tree}" "${sha}" >&2
     # Shared target dir so dependency builds are reused across commits.
     local status=0
-    (cd "${tree}" && CARGO_TARGET_DIR="${SPRT_DIR}/.target" \
+    (cd "${tree}" && CARGO_TARGET_DIR="${TARGET_DIR}" \
       cargo build --release --quiet -p apefish-cli) >&2 || status=$?
     git -C "${REPO_ROOT}" worktree remove --force "${tree}"
     [ "${status}" -eq 0 ] || die "cargo build failed for ${ref} (${sha})"
-    cp "${SPRT_DIR}/.target/release/apefish" "${bin}"
+    cp "${TARGET_DIR}/release/apefish" "${bin}"
   fi
   echo "${bin} ${sha}"
 }
@@ -142,6 +150,29 @@ warn_if_bot_running() {
     log "WARNING: apefish-bot.service is running and will compete for CPU."
     log "         Stop it for clean results: systemctl --user stop apefish-bot"
   fi
+}
+
+# Number of CPUs in a list like "2-11" or "0,2,4-7".
+count_cpus() {
+  local total=0 part
+  IFS=',' read -ra parts <<<"$1"
+  for part in "${parts[@]}"; do
+    if [[ "${part}" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      total=$((total + BASH_REMATCH[2] - BASH_REMATCH[1] + 1))
+    elif [[ "${part}" =~ ^[0-9]+$ ]]; then
+      total=$((total + 1))
+    else
+      die "invalid CPU list: $1"
+    fi
+  done
+  echo "${total}"
+}
+
+# Append key=value lines to $GITHUB_OUTPUT when running under GitHub Actions.
+gh_output() {
+  [ -n "${GITHUB_OUTPUT:-}" ] || return 0
+  local kv
+  for kv in "$@"; do echo "${kv}" >> "${GITHUB_OUTPUT}"; done
 }
 
 default_concurrency() {
