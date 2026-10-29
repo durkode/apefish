@@ -1,0 +1,109 @@
+# Cheap checks on GitHub-hosted runners, for every push to main and every PR
+# (forks included: nothing here runs on the self-hosted SPRT machine).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
+
+  # Self-play: no time losses, illegal moves or crashes, plus UCI compliance.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            sprt/.tools
+            sprt/books
+          key: sprt-tools-${{ runner.os }}-v1.8.0-alpha
+      - run: cargo smoke --games 100
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-games
+          path: |
+            sprt/runs/*/games.pgn
+            sprt/runs/*/*.log
+
+  # Bench signature of the PR against its merge base, posted on the PR. This
+  # is what replaces "Bench: N" in commit messages.
+  bench:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - id: bench
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          BASE="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          sprt/sprt.sh --bench-only --dev HEAD --base "${BASE}"
+      # Fork PRs get a read-only token, so they only see the bench in the job log.
+      - if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ steps.bench.outputs.dev_sha }}
+          BASE_SHA: ${{ steps.bench.outputs.base_sha }}
+          DEV_BENCH: ${{ steps.bench.outputs.dev_bench }}
+          BASE_BENCH: ${{ steps.bench.outputs.base_bench }}
+          CHANGED: ${{ steps.bench.outputs.bench_changed }}
+        run: |
+          if [ "${CHANGED}" = true ]; then
+            VERDICT="**Changed**: this PR affects search. Add the \`sprt\` label to test its strength."
+          else
+            VERDICT="**Unchanged**: this PR cannot affect play, so it needs no SPRT."
+          fi
+          cat > "${RUNNER_TEMP}/bench.md" <<EOF
+          ### Bench
+          | | commit | bench |
+          |---|---|---|
+          | PR | \`${DEV_SHA}\` | ${DEV_BENCH} |
+          | Base | \`${BASE_SHA}\` | ${BASE_BENCH} |
+
+          ${VERDICT}
+          EOF
+          sprt/ci/report.sh comment "${PR}" bench "${RUNNER_TEMP}/bench.md"
+
+  # Every commit on main gets its bench recorded in bench.tsv on the
+  # sprt-results branch.
+  record-bench:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          BENCH="$(cargo bench-sig 2>/dev/null | sed -nE 's/^([0-9]+) nodes.*/\1/p')"
+          [ -n "${BENCH}" ] || { echo "bench failed" >&2; exit 1; }
+          printf 'date\tcommit\tbench\n%s\t%s\t%s\n' \
+            "$(date -Iseconds)" "$(git rev-parse --short=10 HEAD)" "${BENCH}" \
+            > "${RUNNER_TEMP}/bench-row.tsv"
+          sprt/ci/report.sh record bench.tsv "${RUNNER_TEMP}/bench-row.tsv"

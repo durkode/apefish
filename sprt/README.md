@@ -32,9 +32,9 @@ same options, and exit codes pass through unchanged. The bench signature isn't
 - `1`: H0 accepted (fail)
 - `2`: undecided or error
 
-It also appends a row to [`history.tsv`](history.tsv), which is committed. Each
-run's PGN, full fastchess log and summary go to `sprt/runs/`, which is
-gitignored.
+Local runs append a row to `sprt/history.tsv` (gitignored; CI results go to
+the `sprt-results` branch, see [CI](#ci)). Each run's PGN, full fastchess log,
+`summary.txt` and `result.json` go to `sprt/runs/`.
 
 ## Bench signature
 
@@ -45,7 +45,8 @@ prints `<nodes> nodes <nps> nps`. The node count is deterministic, so:
   stops (use `--force` to run anyway).
 - **Different bench:** the search changed, so test it.
 
-Put it in commit messages as `Bench: <nodes>`. The bench also gives a
+CI posts both benches on every PR and records the bench of every commit on
+`main`, so you don't need to put it in commit messages. The bench also gives a
 quick NPS comparison for speed-only changes.
 
 ## When to run what
@@ -82,13 +83,68 @@ have passed.
 **Run on a quiet machine.** Both scripts warn if `apefish-bot.service` is
 running. A live Lichess game competes for CPU and distorts both engines' clocks.
 
-## Adding to CI later
+## CI
 
-The scripts don't prompt and take everything from flags and env vars, so a CI
-job only needs Rust and either `make` + `g++` or `FASTCHESS=/path`:
+Two workflows:
 
-- **Every push/PR (cheap):** `cargo test` plus `cargo smoke --games 100`.
-- **On demand (expensive):** `cargo sprt --dev $SHA --base main` on a
-  self-hosted runner. Hosted runners have too few cores and noisy timing.
+| Workflow | Runs on | When | What |
+|---|---|---|---|
+| [`ci.yml`](../.github/workflows/ci.yml) | GitHub-hosted | every PR and push to `main` | `cargo test`, `cargo smoke`, bench comment on the PR, bench of each `main` commit recorded |
+| [`sprt.yml`](../.github/workflows/sprt.yml) | self-hosted (`apefish-sprt`) | `sprt` label on a PR, or run manually | STC SPRT, then LTC automatically if STC passes |
 
-Cache `sprt/.tools`, `sprt/books` and `sprt/bins` between runs.
+**Running an SPRT on a PR:**
+1. Check the "Bench" comment. If it says *Unchanged*, the PR can't affect play
+   and doesn't need a test.
+2. Add the `sprt` label. Also add `nonreg` first for a "doesn't lose Elo" test.
+3. Results come back as:
+   - the `sprt/stc` and `sprt/ltc` commit statuses
+   - one PR comment per time control
+   - the games and logs, as run artifacts
+
+   The results are advisory and never block a merge. Each new push to the PR
+   cancels the running test and starts a new one while the label is on.
+4. To test any branch or commit without a PR, use Actions → SPRT → *Run
+   workflow*.
+
+**What is tested:** the PR's head against its merge base with `main`, so only
+the PR's own changes are measured. If `main` has since gained changes to the
+search, rebase the PR and re-run.
+
+**Results history** lives on the `sprt-results` branch, which CI writes to:
+- `history.tsv`: one row per CI SPRT run
+- `bench.tsv`: the bench of every commit on `main`
+
+Together these replace `Bench:` lines in commit messages. Local runs still
+write to `sprt/history.tsv`, which is gitignored.
+
+**Fork PRs** get tests, smoke and bench on GitHub's own runners, but never the
+self-hosted runner. `sprt.yml` only runs for branches in this repository.
+
+### Self-hosted runner
+
+[`ci/runner.nix`](ci/runner.nix) is a NixOS module for the runner. It runs as
+a separate `apefish-ci` system user with no access to `/home`, and caches in
+`/var/lib/apefish-ci`. To install it:
+
+1. Create a fine-grained personal access token, limited to this repository,
+   with **Administration: Read and write**. Save it with no trailing newline:
+   ```sh
+   sudo install -d -m 700 /etc/apefish-ci
+   echo -n 'github_pat_…' | sudo tee /etc/apefish-ci/github-runner.token >/dev/null
+   sudo chmod 600 /etc/apefish-ci/github-runner.token
+   ```
+2. Copy `sprt/ci/runner.nix` to `/etc/nixos/apefish-runner.nix`, add it to
+   `imports` in `configuration.nix`, then run `sudo nixos-rebuild switch`.
+3. Check that it registered: `systemctl status github-runner-apefish-sprt`,
+   and the runner should show as *Idle* under the repo's Settings → Actions →
+   Runners.
+
+Games are pinned to CPUs 2–11 (repo variable `SPRT_CPUS` overrides this),
+which leaves cores 0–1 for the Lichess bot and the rest of the machine.
+
+### Testing the CI scripts locally
+
+[`ci/sprt-job.sh`](ci/sprt-job.sh) and [`ci/report.sh`](ci/report.sh) hold all
+the CI logic. You can run them by hand with a stub `gh` on `PATH` and a local
+bare repository as `origin`. Set `DEV`, `BASE`, `MODE`, `PR`, `GH_TOKEN` and
+the `GITHUB_*` variables yourself.
