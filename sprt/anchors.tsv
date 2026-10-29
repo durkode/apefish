@@ -1,0 +1,12 @@
+# Opponents of known strength for sprt/rating.sh, one per line, tab-separated:
+#   name  cmd  elo  uci options (space-separated key=value, or -)
+#
+# cmd "stockfish" is fetched by rating.sh; anything else is a path to a UCI
+# engine. Stockfish's UCI_Elo is calibrated at 60+0.6 and anchored to
+# CCRL 40/4 (Stockfish README), so the fitted rating is on that scale.
+# Keep anchors within a few hundred Elo of apefish: a 0% or 100% score
+# says almost nothing about the rating.
+sf1400	stockfish	1400	UCI_LimitStrength=true UCI_Elo=1400
+sf1700	stockfish	1700	UCI_LimitStrength=true UCI_Elo=1700
+sf2000	stockfish	2000	UCI_LimitStrength=true UCI_Elo=2000
+sf2300	stockfish	2300	UCI_LimitStrength=true UCI_Elo=2300

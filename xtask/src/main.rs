@@ -1,15 +1,16 @@
-//! Workspace task runner behind the `cargo sprt` / `cargo smoke` aliases in
-//! `.cargo/config.toml`. Cargo aliases can only expand to cargo commands, so
-//! this hands its arguments to the matching script in `sprt/`, which holds all
-//! the logic (see sprt/README.md).
+//! Workspace task runner behind the `cargo sprt` / `cargo smoke` /
+//! `cargo rating` aliases in `.cargo/config.toml`. Cargo aliases can only
+//! expand to cargo commands, so this hands its arguments to the matching script
+//! in `sprt/`, which holds all the logic (see sprt/README.md).
 
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: cargo xtask <sprt|smoke> [script options]
+const USAGE: &str = "usage: cargo xtask <sprt|smoke|rating> [script options]
 
-  sprt   SPRT a dev build against a base build (sprt/sprt.sh)
-  smoke  self-play robustness check (sprt/smoke.sh)
+  sprt    SPRT a dev build against a base build (sprt/sprt.sh)
+  smoke   self-play robustness check (sprt/smoke.sh)
+  rating  rough Elo from a gauntlet vs Stockfish levels (sprt/rating.sh)
 
 Pass --help after a task for its options, e.g. `cargo sprt --help`.";
 
@@ -18,6 +19,7 @@ fn main() -> ExitCode {
     let script = match args.next().as_deref() {
         Some("sprt") => "sprt.sh",
         Some("smoke") => "smoke.sh",
+        Some("rating") => "rating.sh",
         Some("-h" | "--help") => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
