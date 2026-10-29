@@ -82,9 +82,9 @@ full report with plots.
 ## Strength testing (SPRT)
 
 ```sh
-cargo run --release -p apefish-cli -- bench   # search fingerprint: "<nodes> nodes <nps> nps"
-sprt/smoke.sh                                 # no time losses / illegal moves / crashes
-sprt/sprt.sh                                  # working tree vs main: did it gain Elo?
+cargo bench-sig   # search fingerprint: "<nodes> nodes <nps> nps"
+cargo smoke       # no time losses / illegal moves / crashes
+cargo sprt        # working tree vs main: did it gain Elo?
 ```
 
 See [sprt/README.md](sprt/README.md) for which test to run for which kind of

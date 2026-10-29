@@ -1,0 +1,8 @@
+# Workspace command aliases. See sprt/README.md.
+[alias]
+xtask = "run -q -p xtask --"
+sprt = "run -q -p xtask -- sprt"
+smoke = "run -q -p xtask -- smoke"
+# Search fingerprint for commit messages ("Bench: N"). Not `bench`: that is
+# the Criterion perft benchmark.
+bench-sig = "run -q --release -p apefish-cli -- bench"

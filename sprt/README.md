@@ -13,14 +13,21 @@ those is available it's built from source, which needs `make` and `g++`.
 ## Quick start
 
 ```sh
-sprt/smoke.sh                     # ~1 min: no time losses / illegal moves / crashes
-sprt/sprt.sh                      # working tree (uncommitted changes included) vs main
-sprt/sprt.sh --dev my-branch      # a branch or commit vs main
-sprt/sprt.sh --mode nonreg        # "doesn't lose Elo" test, e.g. for simplifications
-sprt/sprt.sh --tc ltc             # long time control confirmation
+cargo bench-sig                 # bench signature for commit messages
+cargo smoke                     # ~1 min: no time losses / illegal moves / crashes
+cargo sprt                      # working tree (uncommitted changes included) vs main
+cargo sprt --dev my-branch      # a branch or commit vs main
+cargo sprt --mode nonreg        # "doesn't lose Elo" test, e.g. for simplifications
+cargo sprt --tc ltc             # long time control confirmation
+cargo sprt --help               # all options
 ```
 
-`sprt/sprt.sh` exits with:
+The cargo aliases (in `.cargo/config.toml`) go through the `xtask` crate to
+`sprt/sprt.sh` and `sprt/smoke.sh`. You can run the scripts directly with the
+same options, and exit codes pass through unchanged. The bench signature isn't
+`cargo bench`, because that runs the Criterion perft benchmarks.
+
+`cargo sprt` exits with:
 - `0`: H1 accepted (pass)
 - `1`: H0 accepted (fail)
 - `2`: undecided or error
@@ -80,8 +87,8 @@ running. A live Lichess game competes for CPU and distorts both engines' clocks.
 The scripts don't prompt and take everything from flags and env vars, so a CI
 job only needs Rust and either `make` + `g++` or `FASTCHESS=/path`:
 
-- **Every push/PR (cheap):** `cargo test` plus `sprt/smoke.sh --games 100`.
-- **On demand (expensive):** `sprt/sprt.sh --dev $SHA --base main` on a
+- **Every push/PR (cheap):** `cargo test` plus `cargo smoke --games 100`.
+- **On demand (expensive):** `cargo sprt --dev $SHA --base main` on a
   self-hosted runner. Hosted runners have too few cores and noisy timing.
 
 Cache `sprt/.tools`, `sprt/books` and `sprt/bins` between runs.
