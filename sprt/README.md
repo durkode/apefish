@@ -20,10 +20,11 @@ cargo sprt --dev my-branch      # a branch or commit vs main
 cargo sprt --mode nonreg        # "doesn't lose Elo" test, e.g. for simplifications
 cargo sprt --tc ltc             # long time control confirmation
 cargo sprt --help               # all options
+cargo rating                    # rough absolute Elo vs Stockfish levels, to ±100
 ```
 
 The cargo aliases (in `.cargo/config.toml`) go through the `xtask` crate to
-`sprt/sprt.sh` and `sprt/smoke.sh`. You can run the scripts directly with the
+`sprt/sprt.sh`, `sprt/smoke.sh` and `sprt/rating.sh`. You can run the scripts directly with the
 same options, and exit codes pass through unchanged. The bench signature isn't
 `cargo bench`, because that runs the Criterion perft benchmarks.
 
@@ -35,6 +36,43 @@ same options, and exit codes pass through unchanged. The bench signature isn't
 Local runs append a row to `sprt/history.tsv` (gitignored; CI results go to
 the `sprt-results` branch, see [CI](#ci)). Each run's PGN, full fastchess log,
 `summary.txt` and `result.json` go to `sprt/runs/`.
+
+## Rough rating
+
+SPRT only compares two apefish builds. `cargo rating` estimates an absolute
+number instead: it plays a gauntlet against the anchors in
+[`anchors.tsv`](anchors.tsv) and fits apefish's Elo with their ratings held
+fixed ([`rating.py`](rating.py), logistic model, 95% interval). Games
+continue until that interval is within the target, so tighter targets cost
+roughly quadratically more games.
+
+```sh
+cargo rating                        # working tree, until ±100 Elo, at 60+0.6
+cargo rating --ref main --error 50  # about 4x the games
+cargo rating --tc 10+0.1            # quicker, but skews the result (see below)
+```
+
+It only stops early once every anchor has played `--min-games` (default 10),
+and gives up at `--max-games` per anchor (default 500). `summary.txt` says
+which of the two ended the run.
+
+The default anchors are Stockfish at `UCI_Elo` 1400, 1700, 2000 and 2300
+(fetched from nixpkgs, or set `STOCKFISH`). Stockfish calibrates `UCI_Elo` at
+60+0.6 against CCRL 40/4, so the result is on that scale and the default time
+control matches it.
+
+Treat the result as a ballpark figure:
+- It's an engine-list rating, not FIDE. The two pools were never calibrated
+  against each other, and engines play humans differently from how they play
+  engines. Expect it to be a couple of hundred Elo off from a FIDE rating.
+- Weakened Stockfish plays deliberately random bad moves, which isn't how a
+  weaker engine plays. Its strength also drifts away from 60+0.6.
+- An anchor scored outside 10–90% is flagged. Such a score says little, so
+  edit `anchors.tsv` to bracket apefish more closely. `UCI_Elo` ranges from
+  1320 to 3190. Any UCI engine with a known rating can also be added as a line.
+
+Each run's games and `summary.txt` go to `sprt/runs/`, and a row is appended
+to `sprt/rating-history.tsv` (gitignored).
 
 ## Bench signature
 

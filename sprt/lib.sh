@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared helpers for sprt/sprt.sh and sprt/smoke.sh. Source, don't execute.
+# Shared helpers for sprt/sprt.sh, sprt/smoke.sh and sprt/rating.sh. Source, don't execute.
 #
 # Everything is non-interactive and configured through flags/env vars so the
 # same scripts can run unattended in CI.
@@ -64,6 +64,29 @@ ensure_fastchess() {
     https://github.com/Disservin/fastchess.git "${src_dir}" >&2
   make -C "${src_dir}" -j"$(nproc)" >&2 || die "fastchess build failed"
   echo "${src_dir}/fastchess"
+}
+
+# Print the path of a Stockfish binary for rating anchors.
+# Order: $STOCKFISH, PATH, nixpkgs.
+ensure_stockfish() {
+  if [ -n "${STOCKFISH:-}" ]; then
+    [ -x "${STOCKFISH}" ] || die "STOCKFISH=${STOCKFISH} is not executable"
+    echo "${STOCKFISH}"; return
+  fi
+  if command -v stockfish >/dev/null 2>&1; then
+    command -v stockfish; return
+  fi
+
+  local nix_link="${TOOLS_DIR}/stockfish-nix"
+  if [ ! -x "${nix_link}/bin/stockfish" ]; then
+    command -v nix >/dev/null 2>&1 \
+      || die "stockfish not found; install it or set STOCKFISH"
+    mkdir -p "${TOOLS_DIR}"
+    log "fetching stockfish from nixpkgs"
+    nix build nixpkgs#stockfish --out-link "${nix_link}" >&2 \
+      || die "nix build nixpkgs#stockfish failed"
+  fi
+  echo "${nix_link}/bin/stockfish"
 }
 
 # Print the path of the opening book, downloading it on first use.

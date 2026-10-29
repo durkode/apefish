@@ -3,6 +3,7 @@
 xtask = "run -q -p xtask --"
 sprt = "run -q -p xtask -- sprt"
 smoke = "run -q -p xtask -- smoke"
+rating = "run -q -p xtask -- rating"
 # Search fingerprint for commit messages ("Bench: N"). Not `bench`: that is
 # the Criterion perft benchmark.
 bench-sig = "run -q --release -p apefish-cli -- bench"
