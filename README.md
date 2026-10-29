@@ -79,6 +79,17 @@ The second run prints a regressed/improved percentage per position instead
 of just an absolute number. `target/criterion/report/index.html` has the
 full report with plots.
 
+## Strength testing (SPRT)
+
+```sh
+cargo run --release -p apefish-cli -- bench   # search fingerprint: "<nodes> nodes <nps> nps"
+sprt/smoke.sh                                 # no time losses / illegal moves / crashes
+sprt/sprt.sh                                  # working tree vs main: did it gain Elo?
+```
+
+See [sprt/README.md](sprt/README.md) for which test to run for which kind of
+change, and what the defaults are.
+
 ## Run
 
 ```sh

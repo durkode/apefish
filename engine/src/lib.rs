@@ -119,6 +119,8 @@ pub struct Apefish {
     zobrist_randoms: Arc<ZobristRandoms>,
     search_in_progress: Option<SearchHandle>,
     tt: Arc<dyn TT>,
+    /// Size of `tt` in megabytes, so [`Apefish::clear_hash`] can rebuild it.
+    tt_size_mb: usize,
 }
 
 impl Apefish {
@@ -132,7 +134,8 @@ impl Apefish {
             movegen:  movegen,
             zobrist_randoms: zobrists,
             search_in_progress: None,
-            tt: tt
+            tt: tt,
+            tt_size_mb: tt_size_in_mb,
         }
     }
 
@@ -154,6 +157,13 @@ impl Apefish {
     /// the next `go`.
     pub fn set_hash_size(&mut self, size_in_mb: usize) {
         self.tt = Self::build_tt(size_in_mb);
+        self.tt_size_mb = size_in_mb;
+    }
+
+    /// Discard all transposition table entries so the next search is independent
+    /// of earlier games. Same idle-only caveat as [`Apefish::set_hash_size`].
+    pub fn clear_hash(&mut self) {
+        self.tt = Self::build_tt(self.tt_size_mb);
     }
 
     fn finish_search(&mut self, suppress_events: bool) {

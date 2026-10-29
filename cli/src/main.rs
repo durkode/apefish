@@ -6,10 +6,27 @@
 
 use apefish_engine::{Apefish, Engine, UnvalidatedMove, Square};
 
+use apefish_cli::bench::{self, DEFAULT_BENCH_DEPTH};
 use apefish_cli::uci::DEFAULT_HASH_MB;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // `apefish bench [depth]`: prints `<nodes> nodes <nps> nps` as the last
+    // stdout line, the format SPRT tooling (sprt/) and OpenBench parse.
+    if args.first().map(String::as_str) == Some("bench") {
+        let depth = match args.get(1).map(|d| d.parse::<u8>()) {
+            None => DEFAULT_BENCH_DEPTH,
+            Some(Ok(d)) if d > 0 => d,
+            Some(_) => {
+                eprintln!("apefish: invalid bench depth: {}", args[1]);
+                std::process::exit(2);
+            }
+        };
+        let result = bench::run(depth);
+        println!("{} nodes {} nps", result.nodes, result.nps());
+        return;
+    }
 
     if args.iter().any(|a| a == "--uci") {
         let hash_mb = match parse_hash_arg(&args) {

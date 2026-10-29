@@ -1,3 +1,8 @@
 /target
 /logs/
 /docker/apefish.bin
+/sprt/.tools/
+/sprt/.target/
+/sprt/bins/
+/sprt/books/
+/sprt/runs/

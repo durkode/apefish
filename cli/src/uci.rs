@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use apefish_engine::basetypes::{MATE, MATE_BOUND, Score};
 use apefish_engine::search::SearchLimits;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square, UnvalidatedMove};
 
@@ -200,6 +201,19 @@ fn handle_position(engine: &mut Apefish, args: &str) {
     }
 }
 
+/// Render a search score as the UCI `score` payload: `mate N` (in moves, negative
+/// when the side to move is being mated) for mate scores, otherwise `cp N`.
+/// GUIs and match runners adjudicate on this, so mates must not leak out as `cp`.
+pub fn format_score(score: Score) -> String {
+    if score >= MATE_BOUND {
+        format!("mate {}", (MATE - score + 1) / 2)
+    } else if score <= -MATE_BOUND {
+        format!("mate {}", -(MATE + score) / 2)
+    } else {
+        format!("cp {score}")
+    }
+}
+
 /// Render an [`EngineEvent`] as the UCI line it produces on stdout.
 ///
 /// `elapsed` is wall-clock time since the `go` that started this search, measured
@@ -213,8 +227,9 @@ pub fn format_event(event: &EngineEvent, elapsed: Option<Duration>) -> String {
     match event {
         EngineEvent::Info { depth, result } => {
             let mut line = format!(
-                "info depth {depth} score cp {} nodes {}",
-                result.score, result.nodes
+                "info depth {depth} score {} nodes {}",
+                format_score(result.score),
+                result.nodes
             );
             if let Some(elapsed) = elapsed {
                 let ms = elapsed.as_millis();
@@ -289,6 +304,7 @@ pub fn handle_line(engine: &mut Apefish, line: &str, events: &Sender<Msg>) -> Co
         "isready" => CommandOutcome::Continue(vec!["readyok".to_string()]),
         "ucinewgame" => {
             engine.new_game();
+            engine.clear_hash();
             CommandOutcome::Continue(vec![])
         }
         "position" => {

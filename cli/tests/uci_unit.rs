@@ -6,9 +6,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use apefish_cli::uci::{
-    handle_line, parse_go_limits, parse_setoption, parse_uci_move, CommandOutcome, Msg,
+    format_event, format_score, handle_line, parse_go_limits, parse_setoption, parse_uci_move, CommandOutcome, Msg,
     DEFAULT_HASH_MB, MAX_HASH_MB, MIN_HASH_MB,
 };
+use apefish_engine::basetypes::MATE;
 use apefish_engine::search::SearchResult;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square};
 
@@ -307,4 +308,44 @@ fn handle_line_unknown_command_is_noop() {
         CommandOutcome::Quit => panic!("expected Continue"),
     }
     assert_eq!(engine.fen(), before);
+}
+
+#[test]
+fn format_score_centipawns() {
+    assert_eq!(format_score(0), "cp 0");
+    assert_eq!(format_score(-153), "cp -153");
+}
+
+#[test]
+fn format_score_mate_for_side_to_move() {
+    // Mate delivered on the 1st / 3rd ply from the root = mate in 1 / 2 moves.
+    assert_eq!(format_score(MATE - 1), "mate 1");
+    assert_eq!(format_score(MATE - 3), "mate 2");
+}
+
+#[test]
+fn format_score_mated_side_to_move() {
+    // Mated on the 2nd / 4th ply from the root = mated in 1 / 2 moves.
+    assert_eq!(format_score(-MATE + 2), "mate -1");
+    assert_eq!(format_score(-MATE + 4), "mate -2");
+}
+
+#[test]
+fn search_info_reports_mate_score() {
+    let mut engine = Apefish::new(0);
+    let (tx, rx) = event_channel();
+    // Back-rank mate: Rd8#.
+    handle_line(&mut engine, "position fen 6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1", &tx);
+    handle_line(&mut engine, "go depth 3", &tx);
+
+    let mut last_info = None;
+    loop {
+        match rx.recv().expect("engine event") {
+            Msg::Engine(event @ EngineEvent::Info { .. }) => last_info = Some(event),
+            Msg::Engine(EngineEvent::BestMove(_)) => break,
+            _ => continue,
+        }
+    }
+    let line = format_event(&last_info.expect("an info line"), None);
+    assert!(line.contains("score mate 1 "), "expected mate score in: {line}");
 }
