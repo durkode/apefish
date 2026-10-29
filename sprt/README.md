@@ -126,15 +126,25 @@ self-hosted runner. `sprt.yml` only runs for branches in this repository.
 a separate `apefish-ci` system user with no access to `/home`, and caches in
 `/var/lib/apefish-ci`. To install it:
 
-1. Create a fine-grained personal access token, limited to this repository,
-   with **Administration: Read and write**. Save it with no trailing newline:
+1. Get a registration token: go to Settings → Actions → Runners → *New
+   self-hosted runner*, and copy the value after `--token` in the
+   `./config.sh` command. It expires after an hour, so do step 2 right after.
+   Save it with no trailing newline:
    ```sh
    sudo install -d -m 700 /etc/apefish-ci
-   echo -n 'github_pat_…' | sudo tee /etc/apefish-ci/github-runner.token >/dev/null
+   echo -n 'A1B2C3…' | sudo tee /etc/apefish-ci/github-runner.token >/dev/null
    sudo chmod 600 /etc/apefish-ci/github-runner.token
    ```
 2. Copy `sprt/ci/runner.nix` to `/etc/nixos/apefish-runner.nix`, add it to
    `imports` in `configuration.nix`, then run `sudo nixos-rebuild switch`.
+
+   After registering, the runner uses its own credentials, which only let it
+   run jobs. Leave the token file as it is: an expired token is harmless, but
+   changing the file triggers a re-registration. If you later change `url`,
+   `extraLabels` or `workDir`, or wipe `/var/lib/github-runner`, it needs a
+   fresh token. This setup deliberately avoids a personal access token,
+   because registering through one needs repository Administration write,
+   which could delete the repo.
 3. Check that it registered: `systemctl status github-runner-apefish-sprt`,
    and the runner should show as *Idle* under the repo's Settings → Actions →
    Runners.

@@ -24,8 +24,15 @@ in
   services.github-runners.apefish-sprt = {
     enable = true;
     url = "https://github.com/durkode/apefish";
-    # Fine-grained PAT, one line, no trailing newline, owned by root, mode 600.
+    # One-time registration token from Settings -> Actions -> Runners -> New
+    # self-hosted runner: one line, no trailing newline, owned by root, mode 600.
+    # It expires after an hour, but registration only needs it once; the runner
+    # then uses its own job-only credentials. Leave the file unchanged: editing
+    # it, or any option that forces re-registration (url, extraLabels, workDir),
+    # needs a fresh token. Deliberately not a PAT: registering via a PAT needs
+    # repository Administration write, which could delete the repo.
     tokenFile = "/etc/apefish-ci/github-runner.token";
+    tokenType = "registration";
     extraLabels = [ "apefish-sprt" ];
     replace = true;
     user = "apefish-ci";
