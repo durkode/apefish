@@ -1,0 +1,3 @@
+date	dev	base	mode	elo0	elo1	tc	games	wins	draws	losses	elo	llr	result	dev_bench	base_bench
+2026-10-29T12:14:32+11:00	1c2dfa6cb1	da8b61d9bb	gainer	0	20	8+0.08	460	179	146	135	33.33 ± 23.92	3.10	H1	28403851	28336539
+2026-10-29T13:03:54+11:00	1c2dfa6cb1	da8b61d9bb	gainer	0	20	40+0.4	138	57	51	30	68.86 ± 35.10	2.97	H1	28403851	28336539

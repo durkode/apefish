@@ -322,6 +322,10 @@ impl Searcher {
             }
         }
 
+        if ply > 0 && pos.times_position_reached() > 1 {
+            return Some(NegamaxResult {best_move: None, score: 0}) // Draw by repetition
+        }
+
         if depth == 0 || ply >= MAX_PLY {
             return Some(NegamaxResult {best_move: None, score: pos.evaluate()})
         }
