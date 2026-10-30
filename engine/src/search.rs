@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::zobrist::ZobristKey;
-use crate::{EngineEvent, EventSink};
+use crate::{EngineEvent, EventSink, PieceKind};
 use crate::basetypes::{MATE, MAX_PLY, Move, Score};
 use crate::board::Position;
 use crate::movegen::MoveGen;
@@ -115,7 +115,7 @@ pub struct SearchLimits {
 }
 
 #[derive(Debug, Clone)]
-pub struct SearchResult {
+pub struct SearchRootResult {
     pub best_move: Option<Move>,
     pub score: Score,
     /// Principal variation, starting with `best_move`.
@@ -124,7 +124,7 @@ pub struct SearchResult {
 }
 
 #[derive(Debug, Clone)]
-pub struct NegamaxResult {
+pub struct SearchResult {
     pub best_move: Option<Move>,
     pub score: Score,
 }
@@ -135,6 +135,7 @@ pub struct Searcher {
     tt: Arc<dyn TT>,
     commands: Receiver<SearchCommand>,
     stop: bool,
+    root_depth: u8,
     /// When this search must stop, and whether it is currently pondering.
     /// `None` for unbounded searches (`go`, `go depth N`, `go infinite`).
     /// Owns all ponder state; see [`TimeCutoffs`].
@@ -152,6 +153,7 @@ impl Searcher {
             tt: transposition_table,
             commands: commands,
             stop: false,
+            root_depth: 0,
             time_cutoffs: None,
             last_stats_event_emitted: None,
         }
@@ -206,7 +208,7 @@ impl Searcher {
         send_event(EngineEvent::BestMove(search_result));
     }
 
-    fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits, send_event: &EventSink) -> SearchResult {
+    fn iterative_deepening(&mut self, pos: &mut Position, limits: &SearchLimits, send_event: &EventSink) -> SearchRootResult {
         // For now, no limit means 1. In future this should be an extremely large number.
         let max_depth = limits.depth.unwrap_or(u8::MAX);
         let ply = 0;
@@ -224,6 +226,7 @@ impl Searcher {
         let mut nodes_searched = 0; // Running total mutated from within negamax search
 
         for depth in 0..max_depth {
+            self.root_depth = depth;
             if self.time_cutoffs.as_ref().is_some_and(|c| c.exceeded_soft()) {
                 break;
             }
@@ -243,7 +246,7 @@ impl Searcher {
                 // Emit a status update
                 send_event(EngineEvent::Info { 
                     depth, 
-                    result: SearchResult { 
+                    result: SearchRootResult { 
                         best_move, 
                         score, 
                         pv: pv_triangle.get_pv(pos, self.tt.as_ref()), 
@@ -261,7 +264,7 @@ impl Searcher {
             best_move = pos.legal_moves().first().copied();
         }
 
-        SearchResult { 
+        SearchRootResult { 
             best_move, 
             score, 
             pv: pv_triangle.get_pv(pos, self.tt.as_ref()), 
@@ -287,7 +290,7 @@ impl Searcher {
         nodes_searched: &mut u64,
         pv: &mut Box<PVTriangle>,
         send_event: &EventSink
-    ) -> Option<NegamaxResult> {
+    ) -> Option<SearchResult> {
 
         pv.start_negamax(ply);
 
@@ -312,7 +315,7 @@ impl Searcher {
                 // TODO: populate the hashfull and tbhits fields for better data once we track these.
                 send_event(
                     EngineEvent::Stats { 
-                        depth: depth + ply as u8, // TODO: this will break with future search extensions, store root depth on the search object
+                        depth: self.root_depth,
                         nodes: *nodes_searched, 
                         hashfull: self.tt.hashfull(), 
                         tbhits: 0 
@@ -323,11 +326,11 @@ impl Searcher {
         }
 
         if ply > 0 && pos.times_position_reached() > 1 {
-            return Some(NegamaxResult {best_move: None, score: 0}) // Draw by repetition
+            return Some(SearchResult {best_move: None, score: 0}) // Draw by repetition
         }
 
         if depth == 0 || ply >= MAX_PLY {
-            return Some(NegamaxResult {best_move: None, score: pos.evaluate()})
+            return self.qsearch(pos, ply, alpha, beta, nodes_searched, pv, send_event)
         }
 
         // Check the TT to see if this position is stored already
@@ -338,9 +341,9 @@ impl Searcher {
                 // This position has already been searched at a depth >= requested depth
                 // Return early if possible
                 match tt_hit.bound {
-                    ScoreBound::Exact => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
-                    ScoreBound::Lower if tt_hit.score >= beta => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
-                    ScoreBound::Upper if tt_hit.score <= alpha => return Some(NegamaxResult{best_move: tt_move, score: tt_hit.score}),
+                    ScoreBound::Exact => return Some(SearchResult{best_move: tt_move, score: tt_hit.score}),
+                    ScoreBound::Lower if tt_hit.score >= beta => return Some(SearchResult{best_move: tt_move, score: tt_hit.score}),
+                    ScoreBound::Upper if tt_hit.score <= alpha => return Some(SearchResult{best_move: tt_move, score: tt_hit.score}),
                     _ => {}
                 }
             }
@@ -357,6 +360,13 @@ impl Searcher {
                 pseudo_legal_moves.swap(0, i);
             }
         }
+
+        // Temporary sort for move ordering until I do it properly
+        pseudo_legal_moves.sort_by_key(|&m| {
+            let victim = pos.piece_by_square[m.to()].map(|p| p.kind as i32).unwrap_or(0);
+            let attacker = pos.piece_by_square[m.from()].map(|p| p.kind as i32).unwrap_or(0);
+            -(victim * 10) + attacker
+        });
 
         for cm in pseudo_legal_moves {
             // Make move and get score
@@ -394,9 +404,9 @@ impl Searcher {
             // No move found, so game is over
             if pos.in_check() {
                 // Need to add ply in order to get the quickest path to checkmate (penalise longer paths)
-                return Some(NegamaxResult{best_move: None, score: -MATE + ply as Score})
+                return Some(SearchResult{best_move: None, score: -MATE + ply as Score})
             } else {
-                return Some(NegamaxResult { best_move: None, score: 0});
+                return Some(SearchResult { best_move: None, score: 0});
             }
         } else {
             // Store the Score + Move in the TT
@@ -415,6 +425,116 @@ impl Searcher {
             );
         }
 
-        Some(NegamaxResult{best_move: best_move, score: best_score})
+        Some(SearchResult{best_move: best_move, score: best_score})
+    }
+
+
+    // TODO: This is currently a basic qsearch. Improve by ordering via MVV-LVA, adding check evasions
+    fn qsearch(
+        &mut self, 
+        pos: &mut Position,
+        ply: usize,
+        mut alpha: Score,
+        beta: Score,
+        nodes_searched: &mut u64,
+        pv: &mut Box<PVTriangle>,
+        send_event: &EventSink,
+    ) -> Option<SearchResult> {
+        // TODO: short refactor early cutoff out of negamax, invoke it here
+
+        pv.start_negamax(ply);
+
+        *nodes_searched += 1;
+
+        // Check if search is aborted or timed out
+        // Only do every 2048 nodes as no need for more often
+        if *nodes_searched & 2047 == 0 {
+            self.drain_commands();
+            if self.stop {
+                return None
+            }
+            // `exceeded_hard` is always false while pondering, so this keeps
+            // running until `ponderhit` (which starts the clock) or `stop`.
+            if self.time_cutoffs.as_ref().is_some_and(|c| c.exceeded_hard()) {
+                return None
+            }
+
+            // Emit an info event if time has elapsed
+            let now = Instant::now();
+            if self.last_stats_event_emitted.is_none() || self.last_stats_event_emitted.unwrap() + STATS_EVENT_INTERVAL < now {
+                // TODO: populate the hashfull and tbhits fields for better data once we track these.
+                send_event(
+                    EngineEvent::Stats { 
+                        depth: self.root_depth,
+                        nodes: *nodes_searched, 
+                        hashfull: self.tt.hashfull(), 
+                        tbhits: 0 
+                    }
+                );
+                self.last_stats_event_emitted = Some(now);
+            }
+        }
+
+        let curr_eval = pos.evaluate();
+        if curr_eval >= beta {
+            // Assumes that the best move will be better than doing nothing
+            // So if doing nothing is above the cutoff, terminate.
+            return Some(SearchResult{best_move: None, score: curr_eval})
+        } else if curr_eval > alpha {
+            alpha = curr_eval;
+        }
+
+        if ply >= MAX_PLY - 1 { 
+            return Some(SearchResult{best_move: None, score: curr_eval})
+        }
+
+
+        let mut best_score = curr_eval;
+        let mut best_move = None;
+
+        // TODO: currently this generates all moves, then strips the ones we don't care about
+        // We should probably have a second move gen function that only generates qsearch moves
+        let mut pseudo_legal_moves: Vec<Move> = self.movegen.pseudo_legal_moves(pos).into_iter().filter(|&m| {
+            // Search Captures (including EP) and promotions to queen
+            pos.is_capture(m) || m.promotion() == Some(PieceKind::Queen)
+        }).collect();
+
+        // Temporary sort for move ordering until I do it properly
+        pseudo_legal_moves.sort_by_key(|&m| {
+            let victim = pos.piece_by_square[m.to()].map(|p| p.kind as i32).unwrap_or(0);
+            let attacker = pos.piece_by_square[m.from()].map(|p| p.kind as i32).unwrap_or(0);
+            -(victim * 10) + attacker
+        });
+        
+        for cm in pseudo_legal_moves {
+            // Make move and get score
+            if pos.make_move(cm).is_err() {
+                continue
+            }
+            let subsearch = self.qsearch(pos, ply + 1, -beta, -alpha, nodes_searched, pv, send_event);
+            pos.unmake_move();
+
+            if subsearch.is_none() {
+                // Search was aborted or timed out
+                return None
+            }
+
+            let score = -1 * subsearch.unwrap().score;
+
+            // Use fail-soft version of alpha beta pruning.
+            if score > best_score {
+                best_score = score;
+                best_move = Some(cm);
+            }
+            if best_score > alpha {
+                alpha = best_score;
+                pv.new_best_move(best_move.unwrap(), ply);
+            }
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        Some(SearchResult{score: best_score, best_move: best_move})
     }
 }

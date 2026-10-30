@@ -10,7 +10,7 @@ use apefish_cli::uci::{
     DEFAULT_HASH_MB, MAX_HASH_MB, MIN_HASH_MB,
 };
 use apefish_engine::basetypes::MATE;
-use apefish_engine::search::SearchResult;
+use apefish_engine::search::SearchRootResult;
 use apefish_engine::{Apefish, Engine, EngineEvent, PieceKind, Square};
 
 /// A throwaway event channel for commands that don't start a search.
@@ -19,7 +19,7 @@ fn event_channel() -> (Sender<Msg>, Receiver<Msg>) {
 }
 
 /// Block until the search delivers its final `BestMove`, skipping `Info` reports.
-fn recv_bestmove(rx: &Receiver<Msg>) -> SearchResult {
+fn recv_bestmove(rx: &Receiver<Msg>) -> SearchRootResult {
     loop {
         match rx.recv().expect("engine event before channel closed") {
             Msg::Engine(EngineEvent::BestMove(result)) => return result,

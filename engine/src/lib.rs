@@ -24,7 +24,7 @@ use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread::{self, Join
 pub use basetypes::{GenericErr, UnvalidatedMove, Move, Piece, PieceKind, Side, Square};
 pub use board::{Position};
 
-use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchCommand, SearchLimits, SearchResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
+use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen::MoveGen, search::{SearchCommand, SearchLimits, SearchRootResult, Searcher}, transposition_table::{ActiveTranspositionTable, NoopTranspositionTable, TT}, zobrist::ZobristRandoms};
 
 
 /// Event that the engine emits into a channel read by the client
@@ -32,7 +32,7 @@ use crate::{basetypes::{DrawReason, GameStatus, WinReason}, fen::to_fen, movegen
 pub enum EngineEvent {
     /// One completed iterative-deepening iteration. Emitted zero or more times
     /// per search, in increasing `depth` order.
-    Info { depth: u8, result: SearchResult },
+    Info { depth: u8, result: SearchRootResult },
 
     /// Periodic progress counters emitted mid-search, independent of iteration
     /// completion. Carries no `score`/`pv` — those are only stable at an
@@ -49,7 +49,7 @@ pub enum EngineEvent {
     },
 
     /// End of search result.
-    BestMove(SearchResult),
+    BestMove(SearchRootResult),
 }
 
 #[derive(Debug)]
