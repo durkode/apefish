@@ -43,6 +43,60 @@ fn time_to_bestmove(engine: &mut Apefish, movetime: Duration) -> (Duration, Sear
     }
 }
 
+/// Tactical positions where quiescence search has the most captures to chew
+/// through, plus a quiet endgame where iterative deepening runs deepest.
+const CLOCK_TEST_FENS: &[&str] = &[
+    "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+    "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+    "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1",
+];
+
+/// Under a game clock (the smoke test's 2+0.02), every search must reply well
+/// within the remaining time. Waits with a timeout, so a search that never
+/// stops fails the test rather than hanging `cargo test`.
+#[test]
+fn clock_search_replies_in_time_on_tactical_positions() {
+    let clock = Duration::from_millis(2000);
+    let inc = Duration::from_millis(20);
+    // Losing half the clock on one move is already a broken time cutoff.
+    let deadline = clock / 2;
+
+    let mut engine = Apefish::new(16);
+    for fen in CLOCK_TEST_FENS {
+        engine.new_game();
+        engine.set_position(Some(fen), &[]);
+
+        let (tx, rx) = mpsc::channel();
+        let limits = SearchLimits {
+            wtime: Some(clock),
+            btime: Some(clock),
+            winc: Some(inc),
+            binc: Some(inc),
+            ..Default::default()
+        };
+        let start = Instant::now();
+        engine.go(limits, Box::new(move |event| {
+            if let EngineEvent::BestMove(result) = event {
+                let _ = tx.send(result);
+            }
+        }));
+
+        // Generous wait so a slow machine reports the elapsed time below
+        // rather than a bare timeout.
+        let result = rx
+            .recv_timeout(clock * 5)
+            .unwrap_or_else(|_| panic!("no bestmove within {:?} on {fen}: search did not stop", clock * 5));
+        let elapsed = start.elapsed();
+
+        assert!(result.best_move.is_some(), "no move returned on {fen}");
+        assert!(
+            elapsed < deadline,
+            "search on {fen} took {elapsed:?} with {clock:?}+{inc:?} on the clock (limit {deadline:?})"
+        );
+    }
+}
+
 #[test]
 fn movetime_overrun_stays_bounded_and_does_not_scale_with_think_time() {
     let mut engine = Apefish::new(64);

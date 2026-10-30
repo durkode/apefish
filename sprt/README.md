@@ -14,7 +14,7 @@ those is available it's built from source, which needs `make` and `g++`.
 
 ```sh
 cargo bench-sig                 # bench signature for commit messages
-cargo smoke                     # ~1 min: no time losses / illegal moves / crashes
+cargo smoke                     # ~2-3 min: no time losses / illegal moves / crashes / stalls
 cargo sprt                      # working tree (uncommitted changes included) vs main
 cargo sprt --dev my-branch      # a branch or commit vs main
 cargo sprt --mode nonreg        # "doesn't lose Elo" test, e.g. for simplifications
@@ -56,8 +56,9 @@ It only stops early once every anchor has played `--min-games` (default 10),
 and gives up at `--max-games` per anchor (default 500). `summary.txt` says
 which of the two ended the run.
 
-The default anchors are Stockfish at `UCI_Elo` 1400, 1700, 2000 and 2300
-(fetched from nixpkgs, or set `STOCKFISH`). Stockfish calibrates `UCI_Elo` at
+The default anchors are Stockfish at `UCI_Elo` 1900, 2100, 2300 and 2500
+(fetched from nixpkgs, or set `STOCKFISH`), centred on apefish's current
+~2200. Move them as apefish improves. Stockfish calibrates `UCI_Elo` at
 60+0.6 against CCRL 40/4, so the result is on that scale and the default time
 control matches it.
 

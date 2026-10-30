@@ -6,7 +6,8 @@
 # CCRL 40/4 (Stockfish README), so the fitted rating is on that scale.
 # Keep anchors within a few hundred Elo of apefish: a 0% or 100% score
 # says almost nothing about the rating.
-sf1400	stockfish	1400	UCI_LimitStrength=true UCI_Elo=1400
-sf1700	stockfish	1700	UCI_LimitStrength=true UCI_Elo=1700
-sf2000	stockfish	2000	UCI_LimitStrength=true UCI_Elo=2000
+# Centred on apefish at ~2200 (with quiescence search).
+sf1900	stockfish	1900	UCI_LimitStrength=true UCI_Elo=1900
+sf2100	stockfish	2100	UCI_LimitStrength=true UCI_Elo=2100
 sf2300	stockfish	2300	UCI_LimitStrength=true UCI_Elo=2300
+sf2500	stockfish	2500	UCI_LimitStrength=true UCI_Elo=2500
