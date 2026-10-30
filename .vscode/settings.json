@@ -4,5 +4,12 @@
     ],
     "lldb.launch.sourceLanguages": [
         "rust"
-    ]
+    ],
+    "editor.quickSuggestionsDelay": 2000,
+    "editor.inlineSuggest.enabled": false,
+    "errorLens.enabled": false,
+    "github.copilot.enable": {
+        "*": false
+    },
+    "github.copilot.nextEditSuggestions.enabled": false
 }

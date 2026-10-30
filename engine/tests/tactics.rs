@@ -27,7 +27,7 @@
 use std::sync::mpsc;
 
 use apefish_engine::basetypes::{GameStatus, WinReason};
-use apefish_engine::search::{SearchLimits, SearchResult};
+use apefish_engine::search::{SearchLimits, SearchRootResult};
 use apefish_engine::{Apefish, Engine, EngineEvent, Side};
 
 /// A depth limit, generous relative to the position's difficulty - the
@@ -49,7 +49,7 @@ fn engine_at(fen: &str) -> Apefish {
 /// asynchronous [`Engine::go`] interface synchronously: the search thread
 /// reports through a channel and this blocks on it until the terminal
 /// [`EngineEvent::BestMove`] arrives, discarding the intermediate `Info` reports.
-fn search(engine: &mut Apefish, limits: SearchLimits) -> SearchResult {
+fn search(engine: &mut Apefish, limits: SearchLimits) -> SearchRootResult {
     let (tx, rx) = mpsc::channel();
     engine.go(limits, Box::new(move |event| {
         let _ = tx.send(event);

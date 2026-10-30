@@ -23,12 +23,12 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use apefish_engine::search::{SearchLimits, SearchResult};
+use apefish_engine::search::{SearchLimits, SearchRootResult};
 use apefish_engine::{Apefish, Engine, EngineEvent};
 
 /// Wall-clock elapsed from the `go` call to the terminal `BestMove` event,
 /// driving the async `Engine::go` synchronously.
-fn time_to_bestmove(engine: &mut Apefish, movetime: Duration) -> (Duration, SearchResult) {
+fn time_to_bestmove(engine: &mut Apefish, movetime: Duration) -> (Duration, SearchRootResult) {
     let (tx, rx) = mpsc::channel();
     let limits = SearchLimits { movetime: Some(movetime), ..Default::default() };
     let start = Instant::now();

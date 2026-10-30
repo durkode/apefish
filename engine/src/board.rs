@@ -529,6 +529,20 @@ impl Position {
         true
     }
 
+    pub fn is_capture(&self, m: Move) -> bool {
+        if self.piece_by_square[m.to()] != None {
+            return true;
+        }
+
+        // Check for en_passant
+        match self.piece_by_square[m.from()] {
+            Some(Piece{kind: PieceKind::Pawn, side: _}) => {
+                m.from().file() != m.to().file()
+            }
+            _ => false
+        }
+    }
+
     pub fn print_debug_state(&self) {
         // for (side, per_piece) in self.pieces.iter() {
         //     println!("\n============= {side} ==========");
